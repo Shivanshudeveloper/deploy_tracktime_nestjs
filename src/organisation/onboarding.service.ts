@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
 import { Repository } from 'typeorm';
-import { User } from 'src/users/user.entity';
+import { TrackTimeStatus, User } from 'src/users/user.entity';
 import { CreateTeamDto } from './dto/team.dto';
 import { UserActivity } from 'src/users/user_activity.entity';
+import { DeepPartial } from 'typeorm';
+type UpdateConfigType = DeepPartial<User['config']>;
 
 @Injectable()
 export class OnboardingService {
@@ -105,5 +107,30 @@ export class OnboardingService {
     
     return user;
   }
+  async updateUserConfig(id:string,status:string):Promise<User>{
+     
+    if(!id){
+      return null;
+    }
 
+    let userDetails = await this.userRepository.findOne({where :{userUUID:id}})
+    
+    if (!userDetails) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+    let updatedConfig :UpdateConfigType = {
+      trackTimeStatus:status as TrackTimeStatus
+    }
+    try {
+      await this.userRepository.update({userUUID:id},{config:updatedConfig}) 
+
+      userDetails = await this.userRepository.findOne({where:{userUUID:id}});
+      return userDetails;
+      
+    } catch (error) {
+      console.log(`Failed to update user configuration: ${error.message}`)
+      throw new Error(`Failed to update user configuration: ${error.message}`)
+    }
+    
+  }
 }

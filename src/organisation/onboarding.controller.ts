@@ -58,4 +58,43 @@ export class OnboardingController {
       return res.status(500).json({ message: 'Failed to fetch user details', error: error.message });
     }
   }
+
+  @Patch('organization/users/:userId')
+  async updateTrackStatus(
+    @Req() req,
+    @Res() res,
+    @Param("userId") id:string ,
+    @Body() Body
+    // @Param('userId') userId: string,
+  ): Promise<any> {
+    // Check if the requesting user is an admin
+    const adminId = req.headers['user-id'];
+    const status  = Body?.status;
+    const requestingUser = await this.userService.validateUserById(adminId);
+    // console.log(requestingUser)
+
+    if (!requestingUser?.isAdmin) {
+      return res.status(403).json({
+        message: 'Unauthorized: Only admin can update track time status',
+      });
+    }
+
+    try {
+      const userToUpdate = await this.userService.validateUserById(id);
+      if (!userToUpdate) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Update trackTimeStatus for the user
+      const updatedUserData = await this.onboardingService.updateUserConfig(id,status);
+      
+      return res
+        .status(200)
+        .json({ message: 'Track time status updated successfully' ,updatedUserData});
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: 'Failed to update track time status' });
+    }
+  }
 }

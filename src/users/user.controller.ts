@@ -125,51 +125,7 @@ export class UserController {
       return res.status(500).json({ message: 'Failed to fetch user config' });
     }
   }
-  // @UseGuards(AuthMiddleware)
-  @Patch('update-track-status')
-  async updateTrackStatus(
-    @Req() req,
-    @Res() res,
-    @Body() updateData: { TrackTimeStatus; userId },
-    // @Param('userId') userId: string,
-  ): Promise<any> {
-    // Check if the requesting user is an admin
-    const adminId = req.headers['user-id'];
-    console.log(adminId)
-    
-    const requestingUser = await this.userService.validateUserById(adminId);
-    console.log(requestingUser)
-    if (!requestingUser?.isAdmin) {
-      return res.status(403).json({
-        message: 'Unauthorized: Only admin can update track time status',
-      });
-    }
 
-    try {
-      const userToUpdate = await this.userService.validateUserById(
-        updateData.userId,
-      );
-      if (!userToUpdate) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Update trackTimeStatus for the user
-      userToUpdate.config = {
-        ...userToUpdate.config,
-        trackTimeStatus: updateData.TrackTimeStatus,
-      };
-      console.log(userToUpdate);
-
-      await this.userService.save(userToUpdate);
-      return res
-        .status(200)
-        .json({ message: 'Track time status updated successfully' });
-    } catch (error) {
-      return res
-        .status(500)
-        .json({ message: 'Failed to update track time status' });
-    }
-  }
   @Post('create-admin')
   async createAdmin(@Body() adminData: Partial<User>): Promise<any> {
     try {
