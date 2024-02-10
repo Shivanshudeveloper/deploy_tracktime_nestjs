@@ -8,6 +8,7 @@ import { TrackTimeStatus, User } from 'src/users/user.entity';
 import { CreateTeamDto } from './dto/team.dto';
 import { UserActivity } from 'src/users/user_activity.entity';
 import { DeepPartial } from 'typeorm';
+import { prototype } from 'events';
 type UpdateConfigType = DeepPartial<User['config']>;
 
 @Injectable()
@@ -96,17 +97,48 @@ export class OnboardingService {
   }
 
  // In your OnboardingService
-
-  async getUserDetails(id: string): Promise<UserActivity[]> {
+  async getUserDetails(id: string,page:number,limit:number): Promise<UserActivity[]> {
     // If findOneBy is not recognized or you prefer a more explicit approach, use findOne:
-    const user = await this.userActivityRepository.find({ where: { user_uid:id }}); 
-    
+    //apply here the logic for sorting the data in timing format and then get's teh data wanted
+    // const userUnsortedData = await this.userActivityRepository.find({where:{user_uid:id}});
+
+    // userUnsortedData?.sort((a,b)=> 
+    // {
+    //   const dateA = new Date(a.timestamp).getTime();
+    //   const dateB = new Date(b.timestamp).getTime();
+
+    //   return dateB - dateA
+    // });
+
+    const skip = (page-1) * limit;
+    const take = limit; 
+    const user = await this.userActivityRepository.find({ where: { user_uid:id },
+    skip,
+    take
+    }); 
+  //  const userDetails = userUnsortedData?.slice(skip,take+1);
     if (!user) {
       throw new Error('User not found');
     }
-    
+
+    user?.sort((a,b)=> 
+    {
+      const dateA = new Date(a.timestamp).getTime();
+      const dateB = new Date(b.timestamp).getTime();
+
+      return dateB - dateA
+    } );
+
     return user;
   }
+
+  async getUserDataCount(id:string):Promise<Number>{
+    const userDataCount = await this.userActivityRepository.find({where:{user_uid:id}});
+   
+    return userDataCount?.length;
+  }
+
+  //service for updating user configs
   async updateUserConfig(id:string,status:string):Promise<User>{
      
     if(!id){

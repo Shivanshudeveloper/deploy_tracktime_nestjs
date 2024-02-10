@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { OnboardingService } from './onboarding.service';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
@@ -9,13 +19,12 @@ import { CreateTeamDto } from './dto/team.dto';
 import { Response } from 'express';
 import { AuthService } from 'src/users/auth.service';
 
-
 @Controller('onboarding')
 export class OnboardingController {
   constructor(
     private readonly onboardingService: OnboardingService,
-    private readonly userService: AuthService
-    ) {}
+    private readonly userService: AuthService,
+  ) {}
 
   @Post('organization')
   async createOrganization(
@@ -24,38 +33,55 @@ export class OnboardingController {
     return this.onboardingService.createOrganization(createOrganizationDto);
   }
 
-  @Post('desktop-application') 
+  @Post('desktop-application')
   async createDesktopApplication(
     @Body() createDesktopApplicationDto: CreateDesktopApplicationDto,
   ): Promise<DesktopApplication> {
-    return this.onboardingService.createDesktopApplication(createDesktopApplicationDto);
+    return this.onboardingService.createDesktopApplication(
+      createDesktopApplicationDto,
+    );
   }
 
   @Post('team')
   async createTeam(@Body() createTeamDto: CreateTeamDto): Promise<Team> {
     return this.onboardingService.createTeam(createTeamDto);
   }
-  
+
   @Get('organization/users')
   async getAllUsers(@Res() res: Response): Promise<Response> {
     try {
       const users = await this.onboardingService.findAllUsers();
       return res.status(200).json(users);
     } catch (error) {
-      return res.status(500).json({ message: 'Failed to fetch users', error: error.message });
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch users', error: error.message });
     }
   }
-  
+
   @Get('organization/users/:id')
-  async getUserDetails(@Param('id') id: string, @Res() res: Response): Promise<Response> {
+  async getUserDetails(
+    @Param('id') id: string,
+    @Res() res: Response,
+    @Query("page") page :number = 1,
+    @Query("limit") Limit:number = 10,
+  ): Promise<Response> {
     try {
-      const user = await this.onboardingService.getUserDetails(id);
-      return res.status(200).json(user) ;
+      
+      const user = await this.onboardingService.getUserDetails(id,page,Limit);
+      const dataCount = await this.onboardingService.getUserDataCount(id);
+      console.log(user,dataCount);
+      return res.status(200).json({user,dataCount});
     } catch (error) {
       if (error.message === 'User not found') {
         return res.status(404).json({ message: error.message });
       }
-      return res.status(500).json({ message: 'Failed to fetch user details', error: error.message });
+      return res
+        .status(500)
+        .json({
+          message: 'Failed to fetch user details',
+          error: error.message,
+        });
     }
   }
 
@@ -63,13 +89,13 @@ export class OnboardingController {
   async updateTrackStatus(
     @Req() req,
     @Res() res,
-    @Param("userId") id:string ,
-    @Body() Body
+    @Param('userId') id: string,
+    @Body() Body,
     // @Param('userId') userId: string,
   ): Promise<any> {
     // Check if the requesting user is an admin
     const adminId = req.headers['user-id'];
-    const status  = Body?.status;
+    const status = Body?.status;
     const requestingUser = await this.userService.validateUserById(adminId);
     // console.log(requestingUser)
 
@@ -86,15 +112,31 @@ export class OnboardingController {
       }
 
       // Update trackTimeStatus for the user
-      const updatedUserData = await this.onboardingService.updateUserConfig(id,status);
-      
+      const updatedUserData = await this.onboardingService.updateUserConfig(
+        id,
+        status,
+      );
+
       return res
         .status(200)
-        .json({ message: 'Track time status updated successfully' ,updatedUserData});
+        .json({
+          message: 'Track time status updated successfully',
+          updatedUserData,
+        });
     } catch (error) {
       return res
         .status(500)
         .json({ message: 'Failed to update track time status' });
     }
   }
+
+  // @Get('organization/users/limit=2&&page=1')
+  // async getAllUsers(@Res() res: Response): Promise<Response> {
+  //   try {
+  //     const users = await this.onboardingService.findAllUsers();
+  //     return res.status(200).json(users);
+  //   } catch (error) {
+  //     return res.status(500).json({ message: 'Failed to fetch users', error: error.message });
+  //   }
+  // }
 }
