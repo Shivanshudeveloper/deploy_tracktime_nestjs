@@ -100,36 +100,40 @@ export class OnboardingService {
   async getUserDetails(id: string,page:number,limit:number): Promise<UserActivity[]> {
     // If findOneBy is not recognized or you prefer a more explicit approach, use findOne:
     //apply here the logic for sorting the data in timing format and then get's teh data wanted
-    // const userUnsortedData = await this.userActivityRepository.find({where:{user_uid:id}});
+    const userUnsortedData = await this.userActivityRepository.find({where:{user_uid:id}});
 
-    // userUnsortedData?.sort((a,b)=> 
-    // {
-    //   const dateA = new Date(a.timestamp).getTime();
-    //   const dateB = new Date(b.timestamp).getTime();
-
-    //   return dateB - dateA
-    // });
-
-    const skip = (page-1) * limit;
-    const take = limit; 
-    const user = await this.userActivityRepository.find({ where: { user_uid:id },
-    skip,
-    take
-    }); 
-  //  const userDetails = userUnsortedData?.slice(skip,take+1);
-    if (!user) {
+    if (!userUnsortedData) {
       throw new Error('User not found');
     }
 
-    user?.sort((a,b)=> 
+    userUnsortedData?.sort((a,b)=> 
     {
       const dateA = new Date(a.timestamp).getTime();
       const dateB = new Date(b.timestamp).getTime();
 
       return dateB - dateA
-    } );
+    });
 
-    return user;
+    const skip = (page-1) * limit;
+    const take = limit*page; 
+    const userDataInLimit = userUnsortedData?.slice(skip,take)
+    
+    return userDataInLimit
+    // const user = await this.userActivityRepository.find({ where: { user_uid:id },
+    // skip,
+    // take
+    // }); 
+  //  const userDetails = userUnsortedData?.slice(skip,take+1);
+
+    // user?.sort((a,b)=> 
+    // {
+    //   const dateA = new Date(a.timestamp).getTime();
+    //   const dateB = new Date(b.timestamp).getTime();
+
+    //   return dateB - dateA
+    // } );
+
+    // return user;
   }
 
   async getUserDataCount(id:string):Promise<Number>{
