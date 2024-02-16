@@ -16,7 +16,7 @@ import { Team } from './organisation/team.entity';
 import { OnboardingService } from './organisation/onboarding.service';
 import { OnboardingController } from './organisation/onboarding.controller';
 import { UserActivity } from './users/user_activity.entity';
-
+import { ConfigModule } from '@nestjs/config';
 // {
 //   type: 'mysql',
 //   host: 'localhost',
@@ -35,6 +35,7 @@ import { UserActivity } from './users/user_activity.entity';
       secret: 'crazy-secret',
       signOptions: { expiresIn: '24h' },
     }),
+    ConfigModule.forRoot()
   ],
   controllers:[UserController,ProfileController,OnboardingController],
   providers:[AuthService,JwtStrategy,OnboardingService]

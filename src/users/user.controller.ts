@@ -56,7 +56,7 @@ export class UserController {
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to register user',
-        error: error?.response?.message,
+        error: error?.message,
       });
     }
   }

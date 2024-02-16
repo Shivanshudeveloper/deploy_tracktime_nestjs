@@ -33,6 +33,16 @@ export class OnboardingController {
     return this.onboardingService.createOrganization(createOrganizationDto);
   }
 
+  @Get("/users/screenshots")
+  async getScreenShots(@Res() res:Response){
+      try {
+        const images = await this.onboardingService.fetchScreenShot();
+        res.status(200).json(images);
+      } catch (error) {
+        res.status(400).json({message:"Failed to fetch images from wasabi.",error:error?.message});
+      }
+  }
+
   @Post('desktop-application')
   async createDesktopApplication(
     @Body() createDesktopApplicationDto: CreateDesktopApplicationDto,

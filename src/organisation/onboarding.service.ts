@@ -9,10 +9,15 @@ import { CreateTeamDto } from './dto/team.dto';
 import { UserActivity } from 'src/users/user_activity.entity';
 import { DeepPartial } from 'typeorm';
 import { prototype } from 'events';
+import { ConfigService } from '@nestjs/config';
+
+import { S3 } from 'aws-sdk';
+
 type UpdateConfigType = DeepPartial<User['config']>;
 
 @Injectable()
 export class OnboardingService {
+  private s3:S3;
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
@@ -23,8 +28,40 @@ export class OnboardingService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     @InjectRepository(UserActivity)
-    private userActivityRepository: Repository<UserActivity>
-  ) {}
+    private userActivityRepository: Repository<UserActivity>,
+    private ConfigureService:ConfigService
+  ) {
+    this.s3 = new S3({
+      endpoint:this.ConfigureService.get<string>("WASABI_ENDPOINT"),
+      accessKeyId:this.ConfigureService.get<string>('WASABI_ACCESS_KEY_ID'),
+      secretAccessKey:this.ConfigureService.get<string>('WASABI_SECRET_ACCESS_KEY'),
+      region:this.ConfigureService.get<string>('WASABI_REGION'),
+    });
+  } 
+
+  async fetchScreenShot():Promise<any[]>{
+    const bucketName = process.env.WASABI_BUCKET_NAME;
+    const params = {
+      Bucket:bucketName,
+      Prefix:'screenshots/'
+    }
+    try {
+      const data = await this.s3.listObjectsV2(params).promise();
+      const images = data.Contents.map(item=>({
+        key:item.Key,
+        lastModified:item.LastModified,
+        size:item.Size,
+        url: this.s3.getSignedUrl('getObject',{
+          Bucket:bucketName,
+          Key:item.Key,
+          Expires: 60 * 5
+        }),
+      }));
+      return images;
+    } catch (error) {
+      throw new Error(`Failed to fetch images from wasabi due to error:${error?.message}`);
+    }
+  }
 
   async createOrganization(data: any): Promise<Organization> {
     // const organization = this.organizationRepository.create({
