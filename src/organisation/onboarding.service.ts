@@ -40,10 +40,11 @@ export class OnboardingService {
   } 
 
   async fetchScreenShot():Promise<any[]>{
-    const bucketName = process.env.WASABI_BUCKET_NAME;
+    // const bucketName = process.env.WASABI_BUCKET_NAME;
+    const bucketName = this.ConfigureService.get<string>("WASABI_BUCKET_NAME");
     const params = {
       Bucket:bucketName,
-      Prefix:'screenshots/'
+      Prefix:'thumbnails/'
     }
     try {
       const data = await this.s3.listObjectsV2(params).promise();
