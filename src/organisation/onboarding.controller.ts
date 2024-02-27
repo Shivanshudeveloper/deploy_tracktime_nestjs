@@ -24,7 +24,7 @@ export class OnboardingController {
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly userService: AuthService,
-  ) {}
+  ) {} 
 
   @Post('organization')
   async createOrganization(
@@ -37,11 +37,30 @@ export class OnboardingController {
   async getScreenShots(@Res() res:Response){
       try {
         const images = await this.onboardingService.fetchScreenShot();
-        res.status(200).json(images);
-      } catch (error) {
+        const userData = await this.onboardingService.getAllUserActivityData();
+        const getUsersInDb = await this.onboardingService.findAllUsers();
+
+        let finalData = userData.map(user=>{
+          images.forEach(image=>{
+            const imgUrlExtracted = image?.key.split("/")[1].split("|")[0];
+            if(user.activity_uuid === imgUrlExtracted){
+              user["ImgData"] = image;
+            }
+          })
+          
+          getUsersInDb.forEach(u=>{
+              if(u.userUUID === user.user_uid){
+                user["user_name"] = u.userName;
+              }
+          })
+          return user;
+        })
+        // console.log(finalData);
+        res.status(200).json(finalData);
+      } catch (error) { 
         res.status(400).json({message:"Failed to fetch images from wasabi.",error:error?.message});
       }
-  }
+  } 
 
   @Post('desktop-application')
   async createDesktopApplication(
@@ -61,6 +80,24 @@ export class OnboardingController {
   async getAllUsers(@Res() res: Response): Promise<Response> {
     try {
       const users = await this.onboardingService.findAllUsers();
+      const images = await this.onboardingService.fetchScreenShot();
+      images.sort((a,b)=>{
+        const timeA = new Date(a.lastModified).getTime();
+        const timeB = new Date(b.lastModified).getTime();
+        return timeB - timeA;
+      })
+       users.map(user=>{
+        user["LatestImage"] =null;
+        images.map(img=>{
+          const userUUID = img?.key.split("/")[1].split("|")[1].split(".")[0];
+          // console.log(userUUID)
+          if(userUUID === user?.userUUID && !user["LatestImage"]){
+            user["LatestImage"] = img;
+          }
+        })
+        return user;
+      })
+
       return res.status(200).json(users);
     } catch (error) {
       return res
@@ -80,7 +117,7 @@ export class OnboardingController {
       
       const user = await this.onboardingService.getUserDetails(id,page,Limit);
       const dataCount = await this.onboardingService.getUserDataCount(id);
-      console.log(user,dataCount);
+      // console.log(user,dataCount);
       return res.status(200).json({user,dataCount});
     } catch (error) {
       if (error.message === 'User not found') {
