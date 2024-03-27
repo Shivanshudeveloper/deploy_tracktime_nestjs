@@ -1,5 +1,10 @@
 // src/app.module.ts
-import { MiddlewareConsumer, Module, NestModule,RequestMethod } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './users/user.entity';
 import { UserController } from './users/user.controller';
@@ -16,7 +21,22 @@ import { Team } from './organisation/team.entity';
 import { OnboardingService } from './organisation/onboarding.service';
 import { OnboardingController } from './organisation/onboarding.controller';
 import { UserActivity } from './users/user_activity.entity';
-import { ConfigModule } from '@nestjs/config';
+import { Teams } from './organisation/teams.entity';
+import { TeamMember } from './organisation/teammembers.entity';
+import { TeamAndTeamMemberController } from './organisation/teams.controller';
+import { teamAndTeamMemberService } from './organisation/teams.service';
+import { RegisteredUser } from './organisation/registeredusers.entity';
+import { Subscription } from './organisation/subscription.entity';
+import { EmailReportSettings } from './organisation/emailreportsetting.entity';
+import { Category } from './organisation/category.entity';
+import { UniqueApps } from './organisation/uniqueapps.entity';
+import { DesktopAppEntity } from './organisation/desktopapp.entity';
+import { applcationEntity } from './organisation/application.entity';
+import { productivitySettingEntity } from './organisation/prodsetting.entity';
+import { trackingPolicyEntity } from './organisation/trackingpolicy.entity';
+import { Devices } from './organisation/devices.entity';
+import { ConfigService } from '@nestjs/config';
+
 // {
 //   type: 'mysql',
 //   host: 'localhost',
@@ -30,25 +50,52 @@ import { ConfigModule } from '@nestjs/config';
 @Module({
   imports: [
     TypeOrmModule.forRoot(typeOrmConfig),
-    TypeOrmModule.forFeature([User,PaidUser,Organization,DesktopApplication,Team,UserActivity]), 
+    TypeOrmModule.forFeature([
+      User,
+      PaidUser,
+      Organization,
+      DesktopApplication,
+      Team,
+      UserActivity,
+      Teams,
+      TeamMember,
+      RegisteredUser,
+      Subscription,
+      EmailReportSettings,
+      Category,
+      UniqueApps,
+      DesktopAppEntity,
+      applcationEntity,
+      productivitySettingEntity,
+      trackingPolicyEntity,
+      Devices,
+    ]),
     JwtModule.register({
       secret: 'crazy-secret',
       signOptions: { expiresIn: '24h' },
     }),
-    ConfigModule.forRoot()
   ],
-  controllers:[UserController,ProfileController,OnboardingController],
-  providers:[AuthService,JwtStrategy,OnboardingService]
+  controllers: [
+    UserController,
+    ProfileController,
+    OnboardingController,
+    TeamAndTeamMemberController,
+  ],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    OnboardingService,
+    teamAndTeamMemberService,
+    ConfigService
+  ],
 })
-
-
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AuthMiddleware)
       .exclude(
         { path: '', method: RequestMethod.ALL },
-        { path: '/*', method: RequestMethod.ALL }
+        { path: '/*', method: RequestMethod.ALL },
       )
       .forRoutes(
         { path: 'auth', method: RequestMethod.ALL },

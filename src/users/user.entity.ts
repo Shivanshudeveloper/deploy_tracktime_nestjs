@@ -1,8 +1,10 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
-import { IsNotEmpty, IsEmail } from 'class-validator';
+import { IsNotEmpty, IsEmail, IsObject, ValidateNested, IsEnum, isEnum } from 'class-validator';
 import { Organization } from '../organisation/organisation.entity';
 import { Team } from 'src/organisation/team.entity';
 import { UserActivity } from './user_activity.entity';
+import { Devices } from 'src/organisation/devices.entity';
+import { Type } from 'class-transformer';
 
 
 export enum TrackTimeStatus {
@@ -10,8 +12,12 @@ export enum TrackTimeStatus {
   Resume = 'Resume',
   StopForever = 'StopForever',
 }
+class userConfig{
+  @IsEnum(TrackTimeStatus)
+  trackTimeStatus: TrackTimeStatus
+}
 
-@Entity()
+@Entity("users") 
 export class User {
   @PrimaryGeneratedColumn('uuid')
   userUUID: string;
@@ -28,21 +34,10 @@ export class User {
   @IsEmail()
   email: string;
 
-  @Column()
-  @IsNotEmpty()
-  password: string;
-
-  @Column()
-  @IsNotEmpty()
-  userType: 'Tracked' | 'Organization'; // Adjust as per your schema
-
+  @ValidateNested()
+  @Type(() => userConfig)
   @Column('json', { nullable: true })
-  config: {
-    trackTimeStatus: TrackTimeStatus;
-  };
-  
-  @Column({ default: false })
-  isAdmin: boolean;
+  config: userConfig;
 
   @ManyToOne(() => Organization, organization => organization.users)
   organization: Organization;
@@ -50,10 +45,9 @@ export class User {
   @ManyToOne(() => Team, team => team.users)
   team: Team;
 
-  // Include this if you want to store the team ID directly
   @Column({ nullable: true })
   teamId: string;
 
-  @OneToMany(() => UserActivity, userActivity => userActivity.user_uid)
+  @OneToMany(() => Devices, DevicesCaptured => DevicesCaptured.user_uid )
   userActivities: UserActivity[];
 }

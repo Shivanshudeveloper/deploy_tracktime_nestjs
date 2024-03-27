@@ -34,6 +34,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     @InjectRepository(PaidUser)
     private paidUserRepository: Repository<PaidUser>,
+    
   ) {}
 
   async addToPaidUsers(user: User): Promise<void> {
@@ -59,11 +60,16 @@ export class AuthService {
   }
   async validateUser(email: string, password: string): Promise<User | null> {
     const user = await this.userRepository.findOne({ where: { email } });
-    console.log(user)
+    console.log(user);
     if (user && user['password'] === password) {
       return user;
     }
     return null;
+  }
+
+  async ValidateUserByGmail(email: string): Promise<User> {
+    let user = await this.userRepository.findOne({ where: { email: email } });
+    return user;
   }
 
   async login(user: User): Promise<string> {
@@ -75,14 +81,14 @@ export class AuthService {
     if (!userUUID) {
       return null; // Return null if userUUID is not provided
     }
-  
+
     try {
       const user = await this.userRepository.findOne({ where: { userUUID } });
-      
+
       if (!user) {
         return null; // Return null if user is not found
       }
-      
+
       return user; // Return the found user
     } catch (err) {
       return null; // Return null in case of any error
@@ -96,10 +102,12 @@ export class AuthService {
       throw new Error('Failed to mark user as paid');
     }
   }
-  async getUserConfig(userId: string): Promise<any> {
+  async getUserConfig(deviceId: string): Promise<any> {
     try {
       // Logic to fetch user details from your database or storage based on user ID
-      const user = await this.userRepository.findOne({ where: { userUUID: userId } });
+      const user = await this.userRepository.findOne({
+        where: { userUUID: deviceId },
+      });
 
       if (!user) {
         return null;
@@ -109,7 +117,7 @@ export class AuthService {
       const { config } = user;
 
       // Return the user's configuration and track time status or modify as needed
-      console.log("user",user)
+      console.log('user', user);
       return {
         trackTimeStatus: config?.trackTimeStatus || 'StopForever',
         // Add other user-specific config details here
@@ -118,32 +126,37 @@ export class AuthService {
       throw new Error('Failed to fetch user config');
     }
   }
+
+
+
   async save(user: User): Promise<User> {
     return await this.userRepository.save(user);
   }
   // Additional method to check if a user is an admin
-  async isAdmin(userUUID: string): Promise<boolean> {
-    const user = await this.userRepository.findOne({ where: { userUUID } });
-    return user?.isAdmin || false;
-  }
-  async createAdminUser(adminData: Partial<User>): Promise<User> {
-    const adminUser = this.userRepository.create({
-      ...adminData,
-      isAdmin: true,
+  // async isAdmin(userUUID: string): Promise<boolean> {
+  //   const user = await this.userRepository.findOne({ where: { userUUID } });
+  //   return user?.isAdmin || false;
+  // }
+  // async createAdminUser(adminData: Partial<User>): Promise<User> {
+  //   const adminUser = this.userRepository.create({
+  //     ...adminData,
+  //     isAdmin: true,
+  //   });
+  //   return await this.userRepository.save(adminUser);
+  // }
+  async isUserPaid(user_id: string): Promise<boolean> {
+    const paidUser = await this.paidUserRepository.findOne({
+      where: { user_id },
     });
-    return await this.userRepository.save(adminUser);
-  }
-  async isUserPaid(user_id: string):Promise<boolean> {
-      const paidUser = await this.paidUserRepository.findOne({where :{ user_id}});
-      if(paidUser?.user_id){  
-        return false;
-      } 
-      return true;
+    if (paidUser?.user_id) {
+      return false;
+    }
+    return true;
   }
 
   async getUsersByOrganization(organizationId: string): Promise<User[]> {
     return this.userRepository.find({
-        where: { organizationUUID: organizationId },
+      where: { organizationUUID: organizationId },
     });
-}
+  }
 }

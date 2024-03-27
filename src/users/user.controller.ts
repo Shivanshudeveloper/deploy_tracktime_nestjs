@@ -24,42 +24,42 @@ export class UserController {
 
   constructor(private readonly userService: AuthService) {}
 
-  @Post('register')
-  async registerUser(
-    @Body() userData: Partial<User>,
-    @Res() res,
-    @Req() req,
-  ): Promise<any> {
-    const isAdmin = userData.isAdmin !== undefined ? userData.isAdmin : false;
-    const organizationId = req?.headers["organizationId"] 
+  // @Post('register')
+  // async registerUser(
+  //   @Body() userData: Partial<User>,
+  //   @Res() res,
+  //   @Req() req,
+  // ): Promise<any> {
+  //   const isAdmin = userData.isAdmin !== undefined ? userData.isAdmin : false;
+  //   const organizationId = req?.headers["organizationId"] 
     
-    try { 
-      // Default config for new users
-      const defaultConfig = {
-        trackTimeStatus: TrackTimeStatus.Resume,
-        // Add other config properties as needed
-      };
+  //   try { 
+  //     // Default config for new users
+  //     const defaultConfig = {
+  //       trackTimeStatus: TrackTimeStatus.Resume,
+  //       // Add other config properties as needed
+  //     };
 
-      const newUser = await this.userService.registerUser({
-        ...userData,
-        isAdmin,
-        organizationUUID:organizationId,
-        config: defaultConfig,
-      });
-      console.log(newUser);
+  //     const newUser = await this.userService.registerUser({
+  //       ...userData,
+  //       isAdmin,
+  //       organizationUUID:organizationId,
+  //       config: defaultConfig,
+  //     });
+  //     console.log(newUser);
 
-      res.set('user-id', newUser.userUUID);
-      return res
-        .status(200)
-        .json({ message: 'User registered successfully', user: newUser });
-      // return { message: 'User registered successfully', user: newUser };
-    } catch (error) {
-      return res.status(500).json({
-        message: 'Failed to register user',
-        error: error?.message,
-      });
-    }
-  }
+  //     res.set('user-id', newUser.userUUID);
+  //     return res
+  //       .status(200)
+  //       .json({ message: 'User registered successfully', user: newUser });
+  //     // return { message: 'User registered successfully', user: newUser };
+  //   } catch (error) {
+  //     return res.status(500).json({
+  //       message: 'Failed to register user',
+  //       error: error?.message,
+  //     });
+  //   }
+  // }
   // @UseGuards(AuthMiddleware)
   @Post('mark-as-paid')
   async markAsPaid(@Req() req, @Res() res): Promise<any> {
@@ -126,15 +126,15 @@ export class UserController {
     }
   }
 
-  @Post('create-admin')
-  async createAdmin(@Body() adminData: Partial<User>): Promise<any> {
-    try {
-      const adminUser = await this.userService.createAdminUser(adminData);
-      return { message: 'Admin user created successfully', user: adminUser };
-    } catch (error) {
-      return { message: 'Failed to create admin user' };
-    }
-  }
+  // @Post('create-admin')
+  // async createAdmin(@Body() adminData: Partial<User>): Promise<any> {
+  //   try {
+  //     const adminUser = await this.userService.createAdminUser(adminData);
+  //     return { message: 'Admin user created successfully', user: adminUser };
+  //   } catch (error) {
+  //     return { message: 'Failed to create admin user' };
+  //   }
+  // }
 
   @UseGuards(AuthMiddleware)
   @Post('login')
@@ -197,33 +197,33 @@ export class UserController {
     }
   }
 
-@Get('organization/users')
-@UseGuards(AuthMiddleware)
-async getOrganizationUsers(@Req() req, @Res() res): Promise<any> {
-    // Extract user ID and organization ID from request headers
-    const userId = req.headers['user-id'];
-    const organizationId = req.headers['organization-id']; // Assuming organization ID is passed in headers
+// @Get('organization/users')
+// @UseGuards(AuthMiddleware)
+// async getOrganizationUsers(@Req() req, @Res() res): Promise<any> {
+//     // Extract user ID and organization ID from request headers
+//     const userId = req.headers['user-id'];
+//     // const organizationId = req.headers['organization-id']; // Assuming organization ID is passed in headers
 
-    console.log(userId,organizationId);
-    try {
-        // Validate the user ID and check if the user is an admin of the requested organization
-        const requestingUser = await this.userService.validateUserById(userId);
+//     console.log(userId,organizationId);
+//     try {
+//         // Validate the user ID and check if the user is an admin of the requested organization
+//         const requestingUser = await this.userService.validateUserById(userId);
 
-        if (!requestingUser) {
-            return res.status(404).json({ message: 'Requesting user not found' });
-        }
+//         if (!requestingUser) {
+//             return res.status(404).json({ message: 'Requesting user not found' });
+//         }
 
-        if (!requestingUser.isAdmin || requestingUser.organizationUUID !== organizationId) {
-            return res.status(403).json({ message: 'Unauthorized: Access is restricted to admins of the specified organization' });
-        }
+//         if (!requestingUser.isAdmin || requestingUser.organizationUUID !== organizationId) {
+//             return res.status(403).json({ message: 'Unauthorized: Access is restricted to admins of the specified organization' });
+//         }
 
-        // Fetch and return data of all users within the specified organization
-        const usersInOrganization = await this.userService.getUsersByOrganization(organizationId);
+//         // Fetch and return data of all users within the specified organization
+//         const usersInOrganization = await this.userService.getUsersByOrganization(organizationId);
 
-        return res.status(200).json({ message: 'Organization users fetched successfully', users: usersInOrganization });
-    } catch (error) {
-        return res.status(500).json({ message: 'Failed to fetch organization users', error: error?.message });
-    }
-}
+//         return res.status(200).json({ message: 'Organization users fetched successfully', users: usersInOrganization });
+//     } catch (error) {
+//         return res.status(500).json({ message: 'Failed to fetch organization users', error: error?.message });
+//     }
+// }
 
 }
