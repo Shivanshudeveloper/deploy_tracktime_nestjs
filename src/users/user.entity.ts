@@ -16,14 +16,14 @@ class userConfig{
   @IsEnum(TrackTimeStatus)
   trackTimeStatus: TrackTimeStatus
 }
-
+ 
 @Entity("users") 
 export class User {
   @PrimaryGeneratedColumn('uuid')
   userUUID: string;
 
   @Column()
-  organizationUUID: string;
+  organizationId: string;
 
   @Column()
   @IsNotEmpty()
@@ -38,13 +38,13 @@ export class User {
   @Type(() => userConfig)
   @Column('json', { nullable: true })
   config: userConfig;
-
+ 
   @ManyToOne(() => Organization, organization => organization.users)
   organization: Organization;
 
   @ManyToOne(() => Team, team => team.users)
   team: Team;
-
+ 
   @Column({ nullable: true })
   teamId: string;
 

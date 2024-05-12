@@ -16,50 +16,120 @@ import { Team } from './team.entity';
 import { CreateOrganizationDto } from './dto/organization.dto';
 import { CreateDesktopApplicationDto } from './dto/desktop.dto';
 import { CreateTeamDto } from './dto/team.dto';
-import { Response, response } from 'express';
+import { Request, Response, response } from 'express';
 import { AuthService } from 'src/users/auth.service';
 import { TrackTimeStatus, User } from 'src/users/user.entity';
 import { validateOrReject } from 'class-validator';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { JwtService } from '@nestjs/jwt';
+import { organizationAdminService } from './OrganizationAdmin.service';
+
 @Controller('onboarding')
 export class OnboardingController {
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly userService: AuthService,
+    private readonly jwtService: JwtService,
+    private readonly organizationAdminService: organizationAdminService,
   ) {}
 
-  @Post('organization')
+  @Post('organization/register')
   async createOrganization(
     @Body() createOrganizationDto: CreateOrganizationDto,
+    @Res() res,
+    @Req() req,
   ): Promise<Organization> {
-    return this.onboardingService.createOrganization(createOrganizationDto);
+    let token = req?.headers['authorization'];
+    token = token?.split(' ')[1];
+    try{
+
+      if (!token) {
+        return res.status(404).json({ Error: 'Token is missing!!' });
+    }
+
+    let isValidToken =
+      await this.organizationAdminService.IsValidateToken(token);
+
+    if (!isValidToken) {
+      return res.status(401).json({ Error: 'Invalid User!!' });
+    }
+
+    let organizationExist = await this.onboardingService.findOrganization(
+      createOrganizationDto?.name?.toLowerCase(),
+    );
+
+    if (organizationExist) {
+      await this.organizationAdminService.updateUserOrganizationId(
+        isValidToken?.id,
+        organizationExist?.id,
+      );
+      return res
+      .status(200)
+        .json({ Error: 'Organization Already Exist!!', organizationExist });
+    }
+    let newOrganization = await this.onboardingService.createOrganization(
+      createOrganizationDto,
+    );
+    await this.organizationAdminService.updateUserOrganizationId(
+      isValidToken?.id,
+      newOrganization?.id,
+    );
+    return res
+      .status(201)
+      .json({ Error: 'Organization Created successfully !!', newOrganization });
+    }catch(err){
+      console.log(err)
+      return res.status(500).json({
+        message: 'Failed to register organizations !!',
+        error: err?.message,
+      });
+    }
   }
 
   @Get('/users/screenshots')
-  async getScreenShots(@Res() res: Response) {
+  async getScreenShots(@Res() res: Response, @Req() req: Request) {
     try {
-      const images = await this.onboardingService.fetchScreenShot();
-      const userData = await this.onboardingService.getAllUserActivityData();
-      const getUsersInDb = await this.onboardingService.findAllUsers();
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
 
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      const images = await this.onboardingService.fetchScreenShot();
+      const userData = await this.onboardingService.getAllUserActivityData(OrganizationId);
+      const getUsersInDb = await this.onboardingService.findAllDevices(
+        OrganizationId,
+      );
+      console.log("images",images);
+      // console.log(userData);
       let finalData = userData.map((user) => {
+        // console.log(user);
         images.forEach((image) => {
           const imgUrlExtracted = image?.key.split('/')[1].split('|')[0];
-          if (user.activity_uuid === imgUrlExtracted) {
+          // console.log("imgUrlExtracted",imgUrlExtracted);
+          if (user?.activity_uuid === imgUrlExtracted) {
             user['ImgData'] = image;
           }
         });
 
         getUsersInDb.forEach((u) => {
-          if (u.userUUID === user.user_uid) {
-            user['user_name'] = u.userName;
+          if (u.user_uid === user.user_uid) {
+            user['device_user_name'] = u.user_name;
           }
         });
         return user;
       });
-      // console.log(finalData);
+      console.log(finalData);
       res.status(200).json(finalData);
     } catch (error) {
       res.status(400).json({
@@ -72,37 +142,205 @@ export class OnboardingController {
   @Post('desktop-application')
   async createDesktopApplication(
     @Body() createDesktopApplicationDto: CreateDesktopApplicationDto,
+    @Res() res,
+    @Req() req,
   ): Promise<DesktopApplication> {
-    return this.onboardingService.createDesktopApplication(
-      createDesktopApplicationDto,
-    );
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminId,
+        );
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      console.log("OrganizationId",OrganizationId);
+      let isExistingDesktopApplication =
+        await this.onboardingService.findDesktopApplication(OrganizationId);
+
+      console.log(isExistingDesktopApplication);
+
+      if (isExistingDesktopApplication?.id) {
+        return res.status(200).json({
+          message: 'Desktop App Already Exist for your organization !!',
+          isExistingDesktopApplication,
+        });
+      }
+      console.log(isExistingDesktopApplication,"isExistingDesktopApplication")
+      createDesktopApplicationDto['organizationId'] = OrganizationId;
+      let newDesktopApp = await this.onboardingService.createDesktopApplication(
+        createDesktopApplicationDto,
+      );
+      console.log(newDesktopApp,"new Desktop Application");
+      return res.status(201).json({
+        message: 'Sucesssfully Desktop App created for the organization !!',
+        newDesktopApp,
+      });
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch devices', error: error.message });
+    }
   }
 
   @Post('organization/team')
-  async createTeam(@Body() createTeamDto: CreateTeamDto): Promise<Team> {
-    return this.onboardingService.createTeam(createTeamDto);
+  async createTeam(
+    @Body() createTeamDto: CreateTeamDto,
+    @Req() req,
+    @Res() res,
+  ): Promise<Team> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminId,
+        );
+
+      createTeamDto['organizationId'] = OrganizationId;
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      let isExistingTeamMember =
+        await this.onboardingService.findTeamForOrganization(
+          OrganizationId,
+          createTeamDto?.name,
+        );
+
+      console.log('isExistingTeamMember', isExistingTeamMember);
+
+      if (isExistingTeamMember?.id) {
+        return res.status(200).json({
+          message: 'Team member already exists !!',
+          team: isExistingTeamMember,
+        });
+      }
+      createTeamDto['organizationId'] = OrganizationId;
+
+      let newTeam = await this.onboardingService.createTeam(createTeamDto);
+
+      console.log('new Team', newTeam);
+      await this.organizationAdminService.findUserAdminByIdAndUpdateStatus(
+        organizationAdminId,
+      );
+      return res
+        .status(200)
+        .json({ message: 'Team created successfully', team: newTeam });
+    } catch (err) {
+      // console.log(err?.message);
+
+      return res
+        .status(500)
+        .json({ message: 'Failed to create team', error: err.message });
+    }
+  }
+
+  @Get('organization/getTeam')
+  async getTeam(@Res() res: Response, @Req() req: Request): Promise<any> {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    try {
+      if (!organizationAdminIdString) {
+        return res
+          .status(499)
+          .json({ message: 'Organization Admin ID is required' });
+      }
+
+      // console.log('organizationAdminId', organizationAdminIdString);
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!organizationAdminIdString) {
+        return res.status(404).json({ message: 'Organization is required' });
+      }
+
+      console.log('OrganizationId', OrganizationId);
+      let team = await this.onboardingService.findAllTeamsForOrganization(OrganizationId);
+      console.log("team",team)
+      if (!team.length) {
+        return res
+          .status(404)
+          .json({ message: 'No team in the organization Please create one!' });
+      }
+      
+      return res.json({ team: team });
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch users', error: err.message });
+    }
   }
 
   @Get('organization/users')
-  async getAllUsers(@Res() res: Response): Promise<Response> {
+  async getAllUsers(
+    @Res() res: Response,
+    @Req() req: Request,
+  ): Promise<Response> {
+    const organizationAdminId = req.headers['organizationAdminId'];
+
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    if (!organizationAdminIdString) {
+      return res
+        .status(400)
+        .json({ message: 'Organization Admin ID is required' });
+    }
+
+    console.log('organizationAdminId', organizationAdminIdString);
+
     try {
-      const users = await this.onboardingService.findAllUsers();
-      const images = await this.onboardingService.fetchScreenShot();
+
+      const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+
+      console.log('OrganizationId', OrganizationId);
+      const users = await this.onboardingService.findAllUsers(OrganizationId); 
+
+      console.log('users', users);
+      const images = await this.onboardingService.fetchScreenShot(); 
+      const teams = await this.onboardingService.getAllTeam(OrganizationId);
+      const devices = await this.onboardingService.findAllDevices(OrganizationId);
+      // console.log("images",images)
       images.sort((a, b) => {
         const timeA = new Date(a.lastModified).getTime();
         const timeB = new Date(b.lastModified).getTime();
         return timeB - timeA;
       });
+
       users.map((user) => {
         user['LatestImage'] = null;
+        user["team"] = null;
+        user["device"] = null;
         images.map((img) => {
           const userUUID = img?.key.split('/')[1].split('|')[1].split('.')[0];
           // console.log(userUUID)
           if (userUUID === user?.userUUID && !user['LatestImage']) {
             user['LatestImage'] = img;
           }
-        });
-        return user;
+        }); 
+        teams.map(team=>{
+          if(user.teamId == team.id){
+            user['team'] = team;
+          }
+          return team
+        })
+        devices.map(device=>{
+          if(device.user_uid == user?.userUUID){
+            user["device"] = device;
+          }
+          return device;
+        })
+
+        return user; 
       });
 
       return res.status(200).json(users);
@@ -113,15 +351,144 @@ export class OnboardingController {
     }
   }
 
+  @Get('organization/devices')
+  async getAllDevices(
+    @Res() res: Response,
+    @Req() req: Request,
+  ): Promise<Response> {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    if (!organizationAdminIdString) {
+      return res
+        .status(400)
+        .json({ message: 'Organization Admin ID is required' });
+    }
+
+    console.log('organizationAdminId', organizationAdminIdString);
+
+    try {
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      const devices = await this.onboardingService.findAllDevices(OrganizationId);
+
+      const users = await this.onboardingService.findAllUsers(OrganizationId);
+      const images = await this.onboardingService.fetchScreenShot(); 
+      const organization = await this.onboardingService.fetchAllOrganization(OrganizationId);
+      const teams = await this.onboardingService.getAllTeam(OrganizationId); 
+
+      /// addition of token authorization needed like which orgnaization is making request that will be send in headers and first decode it
+      // and use it to fetch the details about organization's devices and team.
+
+      images.sort((a, b) => {
+        const timeA = new Date(a.lastModified).getTime();
+        const timeB = new Date(b.lastModified).getTime();
+        return timeB - timeA;
+      });
+
+      devices.map((user) => {
+        user['LatestImage'] = null;
+        user['userDetail'] = null;
+        user['organizationDetail'] = null;
+        user['teamDetail'] = null;
+        images.map((img) => {
+          const userUUID = img?.key.split('/')[1].split('|')[1].split('.')[0];
+          // console.log(userUUID)
+          if (userUUID === user?.device_uid && !user['LatestImage']) {
+            user['LatestImage'] = img;
+          }
+          return img;
+        });
+
+        // for updating hte user details
+        // console.log("user.user_uid",user?.user_uid)
+        user?.user_uid &&
+          users.map((u) => {
+            const userUUID = u.userUUID;
+            console.log('userUUID', userUUID);
+            if (user?.user_uid && user?.user_uid === userUUID) {
+              user['userDetail'] = u;
+              // user['user_name'] = u.userName;
+            }
+            return u;
+          });
+
+        //for updating the orgnization details
+        user?.organization_uid && user?.organization_uid === organization?.id
+          ? (user['organizationDetail'] = organization)
+          : null;
+        // organization.map((org) => {
+        //   if (user?.organization_uid === org.id) {
+        //     user['OrganizationDetail'] = org;
+        //   }
+        //   return org;
+        // });
+
+        user?.user_uid &&
+          teams.map((team) => {
+            if (user?.organization_uid === team?.organizationId) {
+              users.map((u) => {
+                if (u?.teamId === team.id) {
+                  user['teamDetail'] = team;
+                }
+                return u;
+              });
+              return team;
+            }
+          });
+        //for updating the orgnization details
+
+        return user;
+      });
+
+      return res.status(200).json(devices);
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch devices', error: error.message });
+    }
+  }
+
   @Get('organization/users/:id')
   async getUserDetails(
     @Param('id') id: string,
     @Res() res: Response,
+    @Req() req: Request,
     @Query('page') page: number = 1,
     @Query('limit') Limit: number = 10,
   ): Promise<Response> {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    if (!organizationAdminIdString) {
+      return res
+        .status(400)
+        .json({ message: 'Organization Admin ID is required' });
+    }
+
+    console.log('organizationAdminId', organizationAdminIdString);
+
     try {
-      const user = await this.onboardingService.getUserDetails(id, page, Limit);
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+      const user = await this.onboardingService.getUserDetails(OrganizationId, id, page, Limit);
       const dataCount = await this.onboardingService.getUserDataCount(id);
       // console.log(user,dataCount);
       return res.status(200).json({ user, dataCount });
@@ -151,7 +518,7 @@ export class OnboardingController {
     // console.log(requestingUser)
 
     if (!requestingUser?.organization.id) {
-      return res.status(403).json({
+      return res.status(401).json({
         message: 'Unauthorized: Only orgnaization can update track time status',
       });
     }
@@ -194,62 +561,56 @@ export class OnboardingController {
     @Res() res,
     @Req() req,
   ): Promise<any> {
-    // const isAdmin = userData.isAdmin !== undefined ? userData.isAdmin : false;
-    const organizationId = req?.headers['organizationid'];
-    const teamId = req?.headers['teamid'];
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminId);
+    if (!OrganizationId) {
+      return res.status(404).json({ error: 'Organization not found !!' });
+    }
+  
+    const organizationId = OrganizationId;
+    const teamId = userData?.teamId;
     try {
-      // Default config for new users
-      const defaultConfig = {
-        trackTimeStatus: TrackTimeStatus.Resume,
-      };
-      console.log('organizationId', organizationId, 'teamId', teamId);
-
       if (!organizationId || !teamId) {
         return res.status(401).send({
-          message: 'Orgnaization or teams are allowed to create users user.',
+          message: 'Organization or teams are required to create users.',
         });
       }
-      const isValidOrganization =
-        this.onboardingService.validateOrganization(organizationId);
-
+  
+      const isValidOrganization = await this.onboardingService.validateOrganization(organizationId);
       if (!isValidOrganization) {
         return res.status(401).send({ message: 'Not a valid organization' });
       }
-
-      // validate here teamId and also the orangizationId also that is that team which had requestwhile adding
-      // the team is that team exist in that
-      // orgnaization
-      let isUserExist = await this.userService.ValidateUserByGmail(
-        userData?.email,
-      );
-      if (isUserExist?.email) {
-        return res.status(401).send({ message: 'User already exists' });
+  
+      const isValidTeam = await this.onboardingService.findTeamForOrganizationWithId(organizationId, teamId);
+      if (!isValidTeam?.id) {
+        return res.status(401).send({ message: 'Not a valid team' });
       }
-
-      const newUser = await this.userService.registerUser({
-        organizationUUID: organizationId,
-        config: defaultConfig,
-        teamId,
-        email: userData.email,
-        userName: userData.userName,
-      });
-
-      const uniqueDeviceCreation =
-        await this.onboardingService.createDeviceForUser(
-          newUser?.organizationUUID,
-          newUser?.userName,
-          newUser?.email,
-        );
-
-      console.log(uniqueDeviceCreation);
+  
+      let isUserExist = await this.onboardingService.ValidateUserByGmail(userData?.email);
+      if (!isUserExist?.email) {
+        userData['organizationId'] = organizationId;
+  
+        isUserExist = await this.userService.registerUser({ ...userData });
+        console.log('User registered here...');
+      }
+  
+      const uniqueDeviceCreation = await this.onboardingService.createDeviceForUser(
+        isUserExist?.organizationId,
+        isUserExist?.userName,
+        isUserExist?.email,
+        isUserExist?.userUUID,
+        '',
+      );
+  
       if (!uniqueDeviceCreation) {
         return res.status(400).send({ message: 'Device creation failed' });
       }
-
+  
       const key = 'an example very very secret key.'; // Replace with a strong secret key
       const iv = crypto.randomBytes(16);
       const encryptedDeviceId = this.encryptData(uniqueDeviceCreation, key, iv);
-
+      const encryptedOrganizationId = this.encryptData(organizationId, key, iv);
+  
       const configFilePath = path.join(
         process.cwd(),
         'src',
@@ -258,41 +619,49 @@ export class OnboardingController {
         'dev_config.txt',
       );
 
-      let configContents = fs.readFileSync(configFilePath, 'utf8');
+      console.log("encrypted Organization id",encryptedOrganizationId);
+      console.log("encrypted device id",encryptedDeviceId);
 
-      // let configContents = "";
-      //  fs.readFile(configFilePath, 'utf-8',(err,data)=>{
-      //   if(err){
-      //     console.log(err?.message);
-      //     return err?.message;
-      //   }
-      //   // console.log(data);
-      //   configContents = data;
-      //   // return data.toString();
-      // });
+  
+      // let configContents = fs.readFileSync(configFilePath, 'utf8');
+      // let updatedConfig = configContents
+      //   .replace(/device_id=\w+/gi, `device_id=${encryptedDeviceId}`);
 
-      // console.log(configContents)
+      // config.replace(/organizationId=\w+/gi, `organizationId=${encryptedOrganizationId}`);
+      try {
+          let configContents = fs.readFileSync(configFilePath, 'utf8');
+          const updatedConfig = configContents
+            .replace(/device_id=[^\n]*/gi, `device_id=${encryptedDeviceId}`)
+            .replace(/organizationId=[^\n]*/gi, `organizationId=${encryptedOrganizationId}`);
+         
+          fs.writeFileSync(configFilePath, updatedConfig);
+          console.log('Config file updated successfully');
 
-      const updatedConfig = configContents.replace(
-        /device_id=\w+/gi,
-        `device_id=${encryptedDeviceId}`,
-      );
-      fs.writeFileSync(configFilePath, updatedConfig);
+          res.set({ 
+            'Content-Disposition': 'attachment; filename=dev_config.txt',
+            'Content-Type': 'text/plain',
+          });
+          return res.status(201).send(updatedConfig);
 
-      // res.set('user-id', newUser.userUUID);
-      return res.status(200).json({
-        message: 'User registered successfully',
-        user: newUser,
-        uniqueDeviceCreation,
-      });
-      // return { message: 'User registered successfully', user: newUser };
+        } catch (err) {
+
+          console.error('Error updating config file:', err);
+          return res.status(500).json({
+            message: 'Failed to update configuration file',
+            error: err.message,
+          });
+
+        }        
+      
     } catch (error) {
+      console.error(error)
       return res.status(500).json({
         message: 'Failed to register user',
-        error: error,
+        error: error.message,
       });
     }
   }
+  
 
   private encryptData(data: String, key: string, iv: Buffer): string {
     const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(key), iv);
@@ -301,43 +670,52 @@ export class OnboardingController {
     return encrypted;
   }
 
-  @Post('/users/configStatus')
+  @Post('users/configStatus')
   async getConfig(@Req() req, @Res() res, @Body() Body): Promise<any> {
     const device_id = req.headers['device-id']; // Extract device ID from headers
     const organizationId = Body?.organizationId; // Extract organization ID from headers
     const mac_address = Body?.mac_address;
     const username = Body?.device_user_name;
-    console.log(device_id, username, mac_address,organizationId)
+    console.log(device_id, username, mac_address, organizationId);
     try {
       if (!mac_address || !organizationId || !username) {
         return res.status(404).json({ message: 'All fields are required' });
       }
- 
-      const isExistorganization =await this.onboardingService.validateOrganization(organizationId);
-      // console.log("isExistorganization",isExistorganization)
+
+      const isExistorganization =
+        await this.onboardingService.validateOrganization(organizationId);
+      console.log("isExistorganization",isExistorganization)
       if (!isExistorganization) {
         return res
           .status(401)
           .json({ message: "Organization with Id doesn't exist" });
       }
+      // let userExist = await this.onboardingService.findUserByEmail(email);
 
-      let checkMacAddres =await this.onboardingService.checkDeviceIdExist(
+      let checkMacAddres = await this.onboardingService.checkDeviceIdExist(
         mac_address,
         username,
       );
+      // creating device for users here
+      const user_uuid = '';
+      const email = '';
       if (!checkMacAddres) {
         let createNewUser = await this.onboardingService.createDeviceForUser(
           organizationId,
-          mac_address,
           username,
+          email,
+          user_uuid,
+          mac_address,
         );
-        checkMacAddres = await createNewUser; 
-        
+        checkMacAddres = await createNewUser;
       }
 
-        console.log("checkMacAddres",checkMacAddres);
+      console.log('device-id', checkMacAddres);
 
-      let userConfig = await this.onboardingService.getUserConfig(checkMacAddres.toString(),organizationId);
+      let userConfig = await this.onboardingService.getUserConfig(
+        checkMacAddres.toString(),
+        organizationId,
+      );
       // Retrieve user config and track time status based on user ID
 
       // if (!userConfig) {
@@ -350,7 +728,7 @@ export class OnboardingController {
       // }
       // if (!userConfig) {
       //   return res.status(404).json({ message: 'User not found' });
-      // }
+      // } 
 
       // const isPaidUser = await this.userService.isUserPaid(userId);
       // // Construct response with user's config and track time status
@@ -361,9 +739,11 @@ export class OnboardingController {
       //     // Other user-specific config details here
       //   },
       // };
-      return res.status(200).json({ config:userConfig,device_id:checkMacAddres });
+      return res
+        .status(202)
+        .json({ config: userConfig, device_id: checkMacAddres });
     } catch (error) {
-      return res.status(500).json({ message: 'Failed to fetch user config' });
+      return res.status(500).json({ message: 'Failed to fetch user config',error:error?.message });
     }
   }
 }

@@ -7,7 +7,7 @@ export class EmailReportSettings {
 
   @Column({ type: 'uuid' })
   organization_id: string;
-
+ 
   @Column()
   monthly: boolean;
 

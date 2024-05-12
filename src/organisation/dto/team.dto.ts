@@ -1,12 +1,13 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateTeamDto {
   @IsNotEmpty()
   @IsString()
   name: string;
 
-  @IsUUID()
-  organizationId: string; // This assumes each team must be associated with an organization.
+  @IsOptional()
+  @IsString()
+  organizationId:string;// This assumes each team must be associated with an organization.
 }
 
 /// New format team dto after test follow this.

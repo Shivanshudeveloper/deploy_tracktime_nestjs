@@ -10,6 +10,7 @@ export class productivitySettingEntity {
 
   @Column()
   name: string;
+  
   @Column()
   productivity_status: string;
 

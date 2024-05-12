@@ -9,7 +9,7 @@ export class CreateDevicesDto {
   @IsNotEmpty()
   user_name: string;
 
-  @IsNotEmpty()
+  // @IsNotEmpty()
   @IsUUID()
   user_uid: string;
 }

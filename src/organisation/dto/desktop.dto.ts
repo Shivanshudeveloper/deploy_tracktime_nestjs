@@ -9,9 +9,13 @@ export class CreateDesktopApplicationDto {
   @IsOptional() // Make logo optional since not all applications might have a URL to a logo at creation
   logo?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   type: string;
+
+  @IsOptional()
+  @IsString()
+  organizationId:string;
 
   @IsOptional()
   @IsString()

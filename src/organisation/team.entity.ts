@@ -8,7 +8,7 @@ import {
 import { Organization } from './organisation.entity';
 import { User } from 'src/users/user.entity';
 
-@Entity()
+@Entity("team")
 export class Team {
   @PrimaryGeneratedColumn('uuid')
   id: string;

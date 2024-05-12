@@ -49,7 +49,8 @@ export class AuthService {
     }
   }
   async registerUser(userData: Partial<User>): Promise<User> {
-    const newUser = this.userRepository.create(userData);
+    console.log("Register Userdata",userData)
+    const newUser = await this.userRepository.create(userData);
     const errors = await validate(newUser);
 
     if (errors.length > 0) {
@@ -69,6 +70,7 @@ export class AuthService {
 
   async ValidateUserByGmail(email: string): Promise<User> {
     let user = await this.userRepository.findOne({ where: { email: email } });
+    console.log("email: " + email);
     return user;
   }
 
@@ -156,7 +158,7 @@ export class AuthService {
 
   async getUsersByOrganization(organizationId: string): Promise<User[]> {
     return this.userRepository.find({
-      where: { organizationUUID: organizationId },
+      where: {  organizationId },
     });
   }
 }

@@ -8,7 +8,7 @@ export class updateOrgDto {
   country: string;
 
   @IsInt()
-  teamSize: number;
+  teamSize: string;
 
   @IsString()
   type: string;

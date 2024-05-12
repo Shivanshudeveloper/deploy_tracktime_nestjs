@@ -15,6 +15,9 @@ export class UserActivity {
   timestamp: Date;
 
   @Column()
+  device_user_name: string;
+
+  @Column()
   app_name: string;
 
   @Column()

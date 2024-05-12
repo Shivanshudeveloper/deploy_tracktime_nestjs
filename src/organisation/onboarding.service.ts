@@ -81,7 +81,7 @@ export class OnboardingService {
     //   type: data.type,
     // });
     const organisation = new Organization();
-    organisation.name = data.name;
+    organisation.name = data.name.toLowerCase();
     organisation.country = data.country;
     organisation.logo = data.logo;
     organisation.teamSize = data.teamSize;
@@ -94,21 +94,45 @@ export class OnboardingService {
   
 
   async createDesktopApplication(data: any): Promise<DesktopApplication> {
-    const desktopApp = this.desktopAppRepository.create({
-      name: data.name,
-      logo: data.logo, // Assuming 'logo' is part of your data
-    });
+    console.log(data);
+    const desktopApp = new DesktopApplication();
+    desktopApp.name = data?.name;
+    desktopApp.logo = data?.logo || "http://example.com/favicon.ico";
+    desktopApp.type = data?.type || "application";
+    desktopApp.version = data?.version || "1.0.0";
+    desktopApp.organizationId = data?.organizationId;
+
+    // let error = validate(desktopApp);
+    // if(error?.length > 0) {
+    //   throw new BadRequestException({Error:"Error creating desktop Appplication",})
+    // }
+
     const savedDesktopApp = await this.desktopAppRepository.save(desktopApp);
     console.log('Saved Desktop Application:', savedDesktopApp);
     return savedDesktopApp;
   }
   
 
-  async createTeam(createTeamDto: CreateTeamDto): Promise<Team> {
-    const team = this.teamRepository.create({ name: createTeamDto.name });
+  async findOrganization(name:string):Promise<Organization>{
+      let isOrganization = await this.organizationRepository.findOne({where:{name}});
 
-    if (createTeamDto.organizationId) {
+    return isOrganization ;
+  }
+  
+  async createTeam(createTeamDto: CreateTeamDto): Promise<Team> {
+    const teamId = await this.teamRepository.findOne({where:{name:createTeamDto.name}});
+    if(teamId?.id){
+      return teamId;
+    }
+    const team = await this.teamRepository.create({ name: createTeamDto?.name });
+    const organization = await this.organizationRepository.findOne({where:{id:createTeamDto?.organizationId}});
+    
+    console.log("Organization",organization)
+    
+    if (createTeamDto?.organizationId) {
       const organization = await this.organizationRepository.findOne({ where: { id: createTeamDto.organizationId } });
+      
+
       if (!organization) {
         throw new Error('Organization not found');
       }
@@ -138,17 +162,48 @@ export class OnboardingService {
     return updatedUser;
 
   } 
-  async findAllUsers(): Promise<User[]> {
-    return await this.userRepository.find();
+  async findAllUsers(Id:string): Promise<User[]> {
+    return await this.userRepository.find({where :{organizationId:Id}});
   }
+  async findAllDevices(organId:string): Promise<Devices[]> {
+    console.log("organId",organId);
+    let devices =  await this.devicesRepository.find({where:{organization_uid:organId}});
+    let deviceInfo = await this.userActivityRepository.find({where:{organization_id:organId}});
 
+    console.log("devices: " + devices)
+    if(!devices?.length){
+        return null;
+    }
+    console.log("devicesInfo: " +deviceInfo)
+
+    devices = devices.map(item=>{
+      console.log("device: " + item)
+      deviceInfo.map(itemInfo=>{
+        // console.log("status",itemInfo?.user_uid === item?.device_uid)
+        if(itemInfo?.user_uid === item?.device_uid){
+          item["deviceInfo"] = itemInfo;
+        }
+        return itemInfo;
+      })
+      return item;
+    })
+    
+    console.log("devices",devices.map(item=>console.log(item["deviceInfo"])));
+    return devices; 
+  }
+  async fetchAllOrganization(organId:string): Promise<Organization> {
+    return await this.organizationRepository.findOne({where:{id:organId}});
+  }
+  async getAllTeam(organId:string):Promise<Team[]> {
+    return await this.teamRepository.find({where:{organizationId:organId}});
+  }
  // In your OnboardingService
-  async getUserDetails(id: string,page:number,limit:number): Promise<UserActivity[]> {
-    // If findOneBy is not recognized or you prefer a more explicit approach, use findOne:
+  async getUserDetails(organId,id: string,page:number,limit:number): Promise<UserActivity[]> {
+    //If findOneBy is not recognized or you prefer a more explicit approach, use findOne:
     //apply here the logic for sorting the data in timing format and then get's teh data wanted
     const FetchedData = await this.userActivityRepository.find({where:{user_uid:id}});
     const ImgData = await this.fetchScreenShot();
-    const userData = await this.findAllUsers();
+    const userData = await this.findAllDevices(organId);
 
     if (!FetchedData) {
       throw new Error('User not found');
@@ -162,14 +217,13 @@ export class OnboardingService {
         }
       }) 
       userData.map(user=>{
-        if(user.userUUID === userD.user_uid){
-          userD["user_name"] = user.userName;
+        if(user.device_uid === userD.user_uid){
+          userD["user_name"] = user.user_name;
         }
       })
       return userD;
     })
 
-   
 
     userUnsortedData?.sort((a,b)=> 
     {
@@ -182,7 +236,7 @@ export class OnboardingService {
     const skip = (page-1) * limit;
     const take = limit*page; 
     const userDataInLimit = userUnsortedData?.slice(skip,take)
-    
+    console.log(page,limit,skip,take)
     return userDataInLimit
     // const user = await this.userActivityRepository.find({ where: { user_uid:id },
     // skip,
@@ -235,9 +289,8 @@ export class OnboardingService {
     
   }
 
-  async getAllUserActivityData():Promise<UserActivity[]>{
-    const userData = await this.userActivityRepository.find();
-   
+  async getAllUserActivityData(organId:string):Promise<UserActivity[]>{
+    const userData = await this.userActivityRepository.find({where :{organization_id:organId}});
     return userData;
   }
 
@@ -249,32 +302,57 @@ export class OnboardingService {
     return false; 
   }
 
-  async createDeviceForUser(organization_uid:string,mac_address:string,userName:string):Promise<String>{
+  async createDeviceForUser(organization_uid: string, userName: string, email: string, user_uid: string, mac_address: string): Promise<string> {
+    console.log("Entering device creation");
 
-    const deviceForUser = await this.devicesRepository.create({
-      organization_uid,
-      user_name:userName,
-      user_uid:null,
-      mac_address:mac_address,
-    })
+    // Check if a device already exists for the user
+    const isDeviceAlreadyExist = await this.devicesRepository.findOne({ where: { user_uid: user_uid } });
+    console.log("Device already exists:", isDeviceAlreadyExist);
     
-    const errors = await validate(deviceForUser);
-
-    if (errors.length > 0) {
-      throw new BadRequestException(errors);
+    if (isDeviceAlreadyExist) {
+        return isDeviceAlreadyExist.device_uid;
     }
-   const device = await this.devicesRepository.save(deviceForUser);
-   console.log(device)
-    return device?.device_uid;
-  }
+    
+    // Efficiently find the last device with the highest number
+    const lastDevice = await this.devicesRepository.createQueryBuilder("device")
+                        .orderBy("device.device_name", "DESC")
+                        .getOne();
 
+    let nextDeviceNumber = 1;
+    if (lastDevice?.device_name) {
+        const lastNumber = parseInt(lastDevice.device_name.split('-')[1]);  // Assuming device name format "Device-X"
+        nextDeviceNumber = lastNumber + 1;
+    }
+    
+    const deviceName = `Device-${nextDeviceNumber}`;
+
+    // Create the device for the user
+    console.log(deviceName)
+    const deviceForUser = await this.devicesRepository.create({
+        organization_uid,
+        user_name: userName,
+        user_uid: user_uid ? user_uid : null,
+        mac_address: mac_address ? mac_address : null,
+        device_name: deviceName
+    });
+    
+    // Save the new device to the database
+    await this.devicesRepository.save(deviceForUser);  // Make sure to save the new device
+    console.log("deviceForUser",deviceForUser)
+
+    console.log("Created device:", deviceForUser.device_uid);
+    return deviceForUser.device_uid; 
+}
+
+
+ 
   async getUserDeviceId(deviceId:string){
     try {
       
       const device = await this.devicesRepository.find({where :{device_uid:deviceId}});
 
       console.log(device); 
-      
+       
       return device;
 
     } catch (error) {
@@ -325,7 +403,7 @@ export class OnboardingService {
       }
 
       // Assuming your User entity has a 'config' field
-      // const { config } = user;
+      // const { config } = user; 
 
       const configUser = await this.userRepository.findOne({where :{userUUID:user?.user_uid}});
       const isPaid = await this.SubscriptionRepository.findOne({where :{organization_id:organizationId}});
@@ -341,4 +419,72 @@ export class OnboardingService {
       throw new Error('Failed to fetch user config');
     }
   }
+ 
+  async findDesktopApplication(orgId:string):Promise<any>{
+
+    try {
+      let desktopApp = await this.desktopAppRepository.findOne({where :{organizationId:orgId}}); 
+      return desktopApp;
+    } catch (error) {
+      throw new BadRequestException(`Error:- ${error}`);
+    }
+  } 
+
+  async findAllTeamsForOrganization(orgId: string): Promise<any> {
+    try {
+        const organizationTeams = await this.teamRepository.find({ where: { organizationId: orgId } });
+        if (organizationTeams?.length) {
+            const teamData = await Promise.all(organizationTeams.map(async (team) => {
+                const teamMembers = await this.userRepository.find({ where: { teamId: team.id } });
+                return {
+                    ...team,
+                    teamMembersCount: teamMembers.length,
+                    teamMembers: teamMembers
+                };
+            }));
+            console.log("Team data: ", teamData);
+            return teamData;
+        }
+        return [];
+    } catch (error) {
+        throw new BadRequestException(`Error: ${error.message}`);
+    }
+}
+
+async findTeamForOrganizationWithId(organId: string,teamId:string): Promise<Team>{
+  try{
+    let isExistTeam = await this.teamRepository.findOne({where:{id:teamId}});
+
+    // if(isExistTeam?.id){
+
+    // }
+      return isExistTeam;
+
+  }catch(err){
+    throw new BadRequestException(`Error:- ${err?.message}`);
+  }
+}
+
+ async findTeamForOrganization(organId:string,teamId:string):Promise<any>{
+  try {
+    let isExitTeam = await this.teamRepository.find({where :{organizationId:organId}});
+
+    if(!isExitTeam.length) {
+      return false;
+    }
+    let team = isExitTeam.find(team=>team.name == teamId);
+    return team;
+    
+  } catch (error) {
+    throw new BadRequestException(`Error:- ${error}`);
+  }
+ }
+ async ValidateUserByGmail(email:string){
+  try{
+    let user = await this.userRepository.findOne({where: {email: email}});
+    return user
+  }catch(err){
+    throw new BadRequestException(`Error: ${err}`);
+  }
+ } 
 }

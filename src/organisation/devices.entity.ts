@@ -5,7 +5,10 @@ export class Devices {
   @PrimaryGeneratedColumn('uuid')
   device_uid: string;
 
-  @Column({ type: 'uuid' })
+  @Column()
+  device_name:string;
+
+  @Column({ type: 'uuid' }) 
   organization_uid: string;
 
   @Column()
@@ -14,6 +17,6 @@ export class Devices {
   @Column({ type: 'uuid' })
   user_uid: string;
 
-  @Column({type: 'varchar',length:17}) 
+  @Column({type: 'varchar',length:17,nullable:true})  
   mac_address:string;
 }

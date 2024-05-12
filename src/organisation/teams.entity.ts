@@ -2,7 +2,7 @@ import { Entity, Column, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { TeamMember } from './teammembers.entity';
 import { User } from 'src/users/user.entity';
 
-@Entity('teams')
+@Entity()
 export class Teams {
   @PrimaryGeneratedColumn('uuid')
   team_uuid: string;

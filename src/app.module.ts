@@ -36,17 +36,12 @@ import { productivitySettingEntity } from './organisation/prodsetting.entity';
 import { trackingPolicyEntity } from './organisation/trackingpolicy.entity';
 import { Devices } from './organisation/devices.entity';
 import { ConfigService } from '@nestjs/config';
+import { organizationAdminService } from './organisation/OrganizationAdmin.service';
+import { OrganizationAdminController } from './organisation/OrgnaizationRegister.controller';
+import { CreateOrganizationAdmin } from './organisation/OrganizationAdmin.entity';
+import { OnbaordingAuthMiddleware } from './middleware/OnboardingAuth.middleware'; 
 
-// {
-//   type: 'mysql',
-//   host: 'localhost',
-//   port: 3306,
-//   username: 'root',
-//   password: '',
-//   database: 'tracktime_db',
-//   entities: ['dist/**/*.entity{.ts,.js}'],
-//   synchronize: true,
-// }
+
 @Module({
   imports: [
     TypeOrmModule.forRoot(typeOrmConfig),
@@ -55,7 +50,7 @@ import { ConfigService } from '@nestjs/config';
       PaidUser,
       Organization,
       DesktopApplication,
-      Team,
+      Team, 
       UserActivity,
       Teams,
       TeamMember,
@@ -69,7 +64,9 @@ import { ConfigService } from '@nestjs/config';
       productivitySettingEntity,
       trackingPolicyEntity,
       Devices,
+      CreateOrganizationAdmin,
     ]),
+
     JwtModule.register({
       secret: 'crazy-secret',
       signOptions: { expiresIn: '24h' },
@@ -80,28 +77,36 @@ import { ConfigService } from '@nestjs/config';
     ProfileController,
     OnboardingController,
     TeamAndTeamMemberController,
+    OrganizationAdminController,
   ],
   providers: [
     AuthService,
     JwtStrategy,
     OnboardingService,
     teamAndTeamMemberService,
-    ConfigService
+    ConfigService,
+    organizationAdminService,
   ],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
+
+
+export class AppModule implements NestModule { 
+  configure(consumer: MiddlewareConsumer) { 
     consumer
-      .apply(AuthMiddleware)
+      .apply(OnbaordingAuthMiddleware)
       .exclude(
         { path: '', method: RequestMethod.ALL },
         { path: '/*', method: RequestMethod.ALL },
+        { path: 'auth/*', method: RequestMethod.ALL },
+        { path: 'auth/*', method: RequestMethod.ALL },
       )
       .forRoutes(
-        { path: 'auth', method: RequestMethod.ALL },
-        { path: 'auth/*', method: RequestMethod.ALL },
+        OnboardingController,
+        // {path : "onboarding", method: RequestMethod.ALL}
+        // { path: 'auth', method: RequestMethod.ALL },
+        // { path: 'auth/*', method: RequestMethod.ALL },
         // Add other routes that require authentication here
       );
   }
 }
-// export class AppModule {}
+// export class AppModule {} 
