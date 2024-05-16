@@ -111,15 +111,19 @@ export class OnboardingController {
         OrganizationId,
       );
       console.log("images",images);
+      console.log("userData",userData);
       // console.log(userData);
       let finalData = userData.map((user) => {
         // console.log(user);
+        user["ImgData"]=null;
+
         images.forEach((image) => {
           const imgUrlExtracted = image?.key.split('/')[1].split('|')[0];
           // console.log("imgUrlExtracted",imgUrlExtracted);
           if (user?.activity_uuid === imgUrlExtracted) {
             user['ImgData'] = image;
           }
+          console.log(user["ImgData"])
         });
 
         getUsersInDb.forEach((u) => {
@@ -129,7 +133,7 @@ export class OnboardingController {
         });
         return user;
       });
-      console.log(finalData);
+      console.log("finalData",finalData);
       res.status(200).json(finalData);
     } catch (error) {
       res.status(400).json({
@@ -299,16 +303,15 @@ export class OnboardingController {
     console.log('organizationAdminId', organizationAdminIdString);
 
     try {
-
       const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
 
       console.log('OrganizationId', OrganizationId);
       const users = await this.onboardingService.findAllUsers(OrganizationId); 
 
-      console.log('users', users);
+      // console.log('users', users);
       const images = await this.onboardingService.fetchScreenShot(); 
       const teams = await this.onboardingService.getAllTeam(OrganizationId);
-      const devices = await this.onboardingService.findAllDevices(OrganizationId);
+      let devices = await this.onboardingService.findAllDevices(OrganizationId);
       // console.log("images",images)
       images.sort((a, b) => {
         const timeA = new Date(a.lastModified).getTime();
@@ -316,34 +319,48 @@ export class OnboardingController {
         return timeB - timeA;
       });
 
-      users.map((user) => {
+     devices = devices.map((user) => {
         user['LatestImage'] = null;
-        user["team"] = null;
-        user["device"] = null;
+        user["user"] = null;
+        
         images.map((img) => {
           const userUUID = img?.key.split('/')[1].split('|')[1].split('.')[0];
-          // console.log(userUUID)
-          if (userUUID === user?.userUUID && !user['LatestImage']) {
+          // console.log("img",img)
+          if (userUUID === user?.device_uid && !user['LatestImage']) {
             user['LatestImage'] = img;
           }
         }); 
-        teams.map(team=>{
-          if(user.teamId == team.id){
-            user['team'] = team;
+        
+        users.length && users.map(u=>{
+          if(u?.userUUID == user?.user_uid){
+            user["user"] = u;
+          }
+          return u;
+        })
+        return user; 
+      });
+      
+      devices.map(device=>{
+        device['teamData'] = null;
+        teams.map(async (team)=>{
+
+          if(device["user"]){
+            
+            // const user_uuid = await this.onboardingService.findUserById(device?.user_uid);
+            if( device["user"]?.teamId== team?.id){
+              // console.log(team)
+              // console.log(user_uuid?.userName)
+              device['teamData'] = team;
+            }
           }
           return team
         })
-        devices.map(device=>{
-          if(device.user_uid == user?.userUUID){
-            user["device"] = device;
-          }
-          return device;
-        })
+       
 
-        return user; 
-      });
-
-      return res.status(200).json(users);
+        return device
+      })
+      console.log(devices)
+      return res.status(200).json(devices);
     } catch (error) {
       return res
         .status(500)
@@ -490,7 +507,7 @@ export class OnboardingController {
       }
       const user = await this.onboardingService.getUserDetails(OrganizationId, id, page, Limit);
       const dataCount = await this.onboardingService.getUserDataCount(id);
-      // console.log(user,dataCount);
+      console.log(user,dataCount);
       return res.status(200).json({ user, dataCount });
     } catch (error) {
       if (error.message === 'User not found') {
@@ -691,15 +708,25 @@ export class OnboardingController {
           .json({ message: "Organization with Id doesn't exist" });
       }
       // let userExist = await this.onboardingService.findUserByEmail(email);
-
-      let checkMacAddres = await this.onboardingService.checkDeviceIdExist(
-        mac_address,
-        username,
-      );
+      let deviceExist = "";
+      if(device_id) {
+        let checkDeviceId = await this.onboardingService.checkDeviceIdExistWithDeviceId(
+          device_id,
+          username,
+        );
+        deviceExist = checkDeviceId;
+      }else {
+        let checkMacAddres = await this.onboardingService.checkDeviceIdExist(
+          mac_address,
+          username,
+        );
+        deviceExist = checkMacAddres;
+      }
       // creating device for users here
+      console.log("deviceExist",deviceExist);
       const user_uuid = '';
       const email = '';
-      if (!checkMacAddres) {
+      if (!deviceExist) {
         let createNewUser = await this.onboardingService.createDeviceForUser(
           organizationId,
           username,
@@ -707,13 +734,13 @@ export class OnboardingController {
           user_uuid,
           mac_address,
         );
-        checkMacAddres = await createNewUser;
+        deviceExist = await createNewUser;
       }
 
-      console.log('device-id', checkMacAddres);
+      console.log('device-id', deviceExist);
 
       let userConfig = await this.onboardingService.getUserConfig(
-        checkMacAddres.toString(),
+        deviceExist.toString(),
         organizationId,
       );
       // Retrieve user config and track time status based on user ID
@@ -739,9 +766,10 @@ export class OnboardingController {
       //     // Other user-specific config details here
       //   },
       // };
+      console.log(deviceExist,"deviceExist",userConfig,"userConfig")
       return res
         .status(202)
-        .json({ config: userConfig, device_id: checkMacAddres });
+        .json({ config: userConfig, device_id: deviceExist });
     } catch (error) {
       return res.status(500).json({ message: 'Failed to fetch user config',error:error?.message });
     }
