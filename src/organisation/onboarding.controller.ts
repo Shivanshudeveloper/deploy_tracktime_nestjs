@@ -694,7 +694,8 @@ export class OnboardingController {
 
   @Post('users/configStatus')
   async getConfig(@Req() req, @Res() res, @Body() Body): Promise<any> {
-    const device_id = req.headers['device-id'];  // Extract device ID from headers
+    // const device_id = req.headers['device-id'];  // Extract device ID from headers
+    const device_id = req.headers['device-id'] || "null";  // Extract device ID from headers
     const organizationId = Body?.organizationId; // Extract organization ID from headers
     const mac_address = Body?.mac_address;
     const username = Body?.device_user_name;
