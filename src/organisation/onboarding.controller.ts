@@ -694,7 +694,6 @@ export class OnboardingController {
 
   @Post('users/configStatus')
   async getConfig(@Req() req, @Res() res, @Body() Body): Promise<any> {
-    // const device_id = req.headers['device-id'];  // Extract device ID from headers
     const device_id = req.headers['device-id'] || "null";  // Extract device ID from headers
     const organizationId = Body?.organizationId; // Extract organization ID from headers
     const mac_address = Body?.mac_address;
@@ -719,6 +718,7 @@ export class OnboardingController {
       if(device_id !== "null") {
         console.log("checking with device-id",device_id)
         let checkDeviceId = await this.onboardingService.checkDeviceIdExistWithDeviceId(
+          mac_address,
           device_id,
           username,
         );

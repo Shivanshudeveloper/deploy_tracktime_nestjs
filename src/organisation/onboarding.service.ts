@@ -394,17 +394,23 @@ export class OnboardingService {
       return null;
     }
   }
-  async checkDeviceIdExistWithDeviceId(device_id :string ,device_user_name :string):Promise<string>{
+  async checkDeviceIdExistWithDeviceId(mac_address:string,device_id :string ,device_user_name :string):Promise<string>{
     try{
-      const isExist = await this.devicesRepository.findOne({where:{device_uid:device_id}
+      let isExist = await this.devicesRepository.findOne({where:{device_uid:device_id}
         // where : {user_name:device_user_name} 
       });
+
+      if(!isExist?.mac_address && mac_address ){
+        isExist = await this.devicesRepository.findOne({where:{mac_address:mac_address}});
+      }
+
       console.log(isExist);
+      
       if(isExist?.user_name && isExist?.user_name.toLowerCase() === device_user_name.toLowerCase()){
         return isExist?.device_uid;
       }
       console.log(isExist?.user_name, device_user_name,isExist?.user_name==device_user_name);
-
+      
       return null;
     }catch(err){
       console.log(err?.message)
