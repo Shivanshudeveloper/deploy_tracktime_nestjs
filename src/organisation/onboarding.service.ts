@@ -377,10 +377,12 @@ export class OnboardingService {
 
   async checkDeviceIdExist(mac_address :string ,device_user_name :string):Promise<string>{
     try{
-      const isExist = await this.devicesRepository.findOne({where:{mac_address:mac_address}
+      const isExist = await this.devicesRepository.findOne({where:{mac_address}
         // where : {user_name:device_user_name} 
       });
-      console.log(isExist);
+      console.log("mac_address",mac_address);
+      console.log("device-user-name",device_user_name);
+      console.log("isExist",isExist);
       if(isExist?.user_name && isExist?.user_name.toLowerCase() === device_user_name.toLowerCase()){
         return isExist?.device_uid;
       }

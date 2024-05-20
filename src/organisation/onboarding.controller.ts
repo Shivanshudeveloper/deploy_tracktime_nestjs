@@ -575,11 +575,15 @@ export class OnboardingController {
   @Post('register/user')
   async registerUser(
     @Body() userData: Partial<User>,
-    @Res() res,
-    @Req() req,
+    @Res() res: Response,
+    @Req() req: Request,
   ): Promise<any> {
     const organizationAdminId = req.headers['organizationAdminId'];
-    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminId);
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+    
     if (!OrganizationId) {
       return res.status(404).json({ error: 'Organization not found !!' });
     }
@@ -623,10 +627,19 @@ export class OnboardingController {
         return res.status(400).send({ message: 'Device creation failed' });
       }
   
-      const key = 'an example very very secret key.'; // Replace with a strong secret key
-      const iv = crypto.randomBytes(16);
-      const encryptedDeviceId = this.encryptData(uniqueDeviceCreation, key, iv);
-      const encryptedOrganizationId = this.encryptData(organizationId, key, iv);
+      // Encryption part (similar to Rust)
+      const key = Buffer.from('an example very very secret key.', 'utf-8'); // 32 bytes key
+      const iv = Buffer.alloc(16, 0); // 16 bytes IV initialized to zeros
+  
+      const encryptData = (data: string, key: Buffer, iv: Buffer): string => {
+        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+        let encrypted = cipher.update(data, 'utf-8', 'hex');
+        encrypted += cipher.final('hex');
+        return encrypted;
+      };
+
+      const encryptedDeviceId = encryptData(uniqueDeviceCreation, key, iv);
+      const encryptedOrganizationId = encryptData(organizationId, key, iv);
   
       const configFilePath = path.join(
         process.cwd(),
@@ -636,39 +649,31 @@ export class OnboardingController {
         'dev_config.txt',
       );
 
-      console.log("encrypted Organization id",encryptedOrganizationId);
-      console.log("encrypted device id",encryptedDeviceId);
+      console.log("encrypted Organization id", encryptedOrganizationId);
+      console.log("encrypted device id", encryptedDeviceId);
 
-  
-      // let configContents = fs.readFileSync(configFilePath, 'utf8');
-      // let updatedConfig = configContents
-      //   .replace(/device_id=\w+/gi, `device_id=${encryptedDeviceId}`);
-
-      // config.replace(/organizationId=\w+/gi, `organizationId=${encryptedOrganizationId}`);
       try {
-          let configContents = fs.readFileSync(configFilePath, 'utf8');
-          const updatedConfig = configContents
-            .replace(/device_id=[^\n]*/gi, `device_id=${encryptedDeviceId}`)
-            .replace(/organizationId=[^\n]*/gi, `organizationId=${encryptedOrganizationId}`);
-         
-          fs.writeFileSync(configFilePath, updatedConfig);
-          console.log('Config file updated successfully');
+        let configContents = fs.readFileSync(configFilePath, 'utf8');
+        const updatedConfig = configContents
+          .replace(/device_id=[^\n]*/gi, `device_id=${encryptedDeviceId}`)
+          .replace(/organizationId=[^\n]*/gi, `organizationId=${encryptedOrganizationId}`);
+        
+        fs.writeFileSync(configFilePath, updatedConfig);
+        console.log('Config file updated successfully');
 
-          res.set({ 
-            'Content-Disposition': 'attachment; filename=dev_config.txt',
-            'Content-Type': 'text/plain',
-          });
-          return res.status(201).send(updatedConfig);
+        res.set({
+          'Content-Disposition': 'attachment; filename=dev_config.txt',
+          'Content-Type': 'text/plain',
+        });
+        return res.status(201).send(updatedConfig);
 
-        } catch (err) {
-
-          console.error('Error updating config file:', err);
-          return res.status(500).json({
-            message: 'Failed to update configuration file',
-            error: err.message,
-          });
-
-        }        
+      } catch (err) {
+        console.error('Error updating config file:', err);
+        return res.status(500).json({
+          message: 'Failed to update configuration file',
+          error: err.message,
+        });
+      }
       
     } catch (error) {
       console.error(error)
@@ -689,7 +694,7 @@ export class OnboardingController {
 
   @Post('users/configStatus')
   async getConfig(@Req() req, @Res() res, @Body() Body): Promise<any> {
-    const device_id = req.headers['device-id']; // Extract device ID from headers
+    const device_id = req.headers['device-id'];  // Extract device ID from headers
     const organizationId = Body?.organizationId; // Extract organization ID from headers
     const mac_address = Body?.mac_address;
     const username = Body?.device_user_name;
@@ -699,8 +704,8 @@ export class OnboardingController {
         return res.status(404).json({ message: 'All fields are required' });
       }
 
-      const isExistorganization =
-        await this.onboardingService.validateOrganization(organizationId);
+      const isExistorganization = await this.onboardingService.validateOrganization(organizationId);
+      
       console.log("isExistorganization",isExistorganization)
       if (!isExistorganization) {
         return res
@@ -709,21 +714,27 @@ export class OnboardingController {
       }
       // let userExist = await this.onboardingService.findUserByEmail(email);
       let deviceExist = "";
-      if(device_id) {
+      console.log("device-id",device_id)
+      if(device_id !== "null") {
+        console.log("checking with device-id",device_id)
         let checkDeviceId = await this.onboardingService.checkDeviceIdExistWithDeviceId(
           device_id,
           username,
         );
         deviceExist = checkDeviceId;
       }else {
+        console.log("checking without device-id",device_id)
         let checkMacAddres = await this.onboardingService.checkDeviceIdExist(
           mac_address,
           username,
         );
+        console.log("checkMacAddres",checkMacAddres);
+
         deviceExist = checkMacAddres;
       }
       // creating device for users here
       console.log("deviceExist",deviceExist);
+
       const user_uuid = '';
       const email = '';
       if (!deviceExist) {
