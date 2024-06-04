@@ -518,4 +518,22 @@ async findTeamForOrganizationWithId(organId: string,teamId:string): Promise<Team
     throw new BadRequestException(`Error: ${err}`);
   }
  } 
+
+ async validateDeviceById(id:string):Promise<Devices>{
+  const device = await this.devicesRepository.findOne({where:{device_uid:id}});
+  
+  return device;
+ }
+ async updateDevice(device: Devices): Promise<Devices> {
+  return await this.devicesRepository.save(device);
+}
+async validateUserIdLinked(userId:string,deviceId:string): Promise<any> {
+  const isExist = await this.devicesRepository.findOne({where: {user_uid:userId}});
+  if(isExist?.device_uid){
+    isExist.user_uid = null;
+  }
+  await this.devicesRepository.save(isExist);
+  return isExist.device_uid;
+}
+  
 }

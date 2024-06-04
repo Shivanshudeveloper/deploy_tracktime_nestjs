@@ -431,7 +431,7 @@ export class OnboardingController {
         user?.user_uid &&
           users.map((u) => {
             const userUUID = u.userUUID;
-            console.log('userUUID', userUUID);
+            // console.log('userUUID', userUUID);
             if (user?.user_uid && user?.user_uid === userUUID) {
               user['userDetail'] = u;
               // user['user_name'] = u.userName;
@@ -452,21 +452,23 @@ export class OnboardingController {
 
         user?.user_uid &&
           teams.map((team) => {
-            if (user?.organization_uid === team?.organizationId) {
               users.map((u) => {
-                if (u?.teamId === team.id) {
+                if (user?.user_uid === u?.userUUID && u?.teamId === team?.id) {
+                  console.log(team.name ,u.userName)
                   user['teamDetail'] = team;
                 }
                 return u;
               });
               return team;
-            }
           });
         //for updating the orgnization details
-
+          // console.log(user)
+          if(user?.user_uid){
+            // console.log(user?.user_name,user["teamDetail"]?.name)
+          }
         return user;
       });
-
+      // console.log(devices,"devices")
       return res.status(200).json(devices);
     } catch (error) {
       return res
@@ -562,6 +564,92 @@ export class OnboardingController {
         .json({ message: 'Failed to update track time status' });
     }
   }
+
+  @Patch('/organization/devices/:deviceId')
+  async updateDeviceUser(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('deviceId') deviceId: string,
+    @Query('user_id') userId: string,
+  ): Promise<any> {
+    const organizationAdminId = req.headers['organizationAdminId'] as string;
+
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+  
+    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+  
+    if (!OrganizationId) {
+      return res.status(404).json({ error: 'Organization not found !!' });
+    }
+    if (!userId || !deviceId) {
+      return res.status(404).json({ error: 'All fields are required !!' });
+    }
+  
+    try {
+      const deviceToUpdate = await this.onboardingService.validateDeviceById(deviceId);
+      if (!deviceToUpdate?.device_uid) {
+        return res.status(404).json({ message: 'Device not found' });
+      }
+  
+      const isUserIdLink = await this.onboardingService.validateUserIdLinked(userId, deviceId);
+      // Update user_uid for the device
+      deviceToUpdate.user_uid = userId; 
+
+      const updatedDevice = await this.onboardingService.updateDevice(deviceToUpdate);
+       
+      return res.status(200).json({
+        message: 'Device user updated successfully',
+        updatedDevice,
+      });
+    } catch (error) {
+      return res.status(500).json({ message: 'Failed to update device user' });
+    }
+  }
+  
+  @Patch('/organization/devices/r/:deviceId')
+  async RemoveUserIdFromDevice(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('deviceId') deviceId: string,
+  ): Promise<any> {
+    const organizationAdminId = req.headers['organizationAdminId'] as string;
+
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+  
+    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+  
+    if (!OrganizationId) {
+      return res.status(404).json({ error: 'Organization not found !!' });
+    }
+    if (!deviceId) {
+      return res.status(404).json({ error: 'All fields are required !!' });
+    }
+  
+    try {
+      const deviceToUpdate = await this.onboardingService.validateDeviceById(deviceId);
+      if (!deviceToUpdate?.device_uid) {
+        return res.status(404).json({ message: 'Device not found' });
+      }
+  
+      // const isUserIdLink = await this.onboardingService.validateUserIdLinked(userId, deviceId);
+      // Update user_uid for the device
+      deviceToUpdate.user_uid = null; 
+
+      const updatedDevice = await this.onboardingService.updateDevice(deviceToUpdate);
+       
+      return res.status(200).json({
+        message: 'Device user updated successfully',
+        updatedDevice,
+      });
+    } catch (error) {
+      return res.status(500).json({ message: 'Failed to update device user' });
+    }
+  }
+  
 
   // @Get('organization/users/limit=2&&page=1')
   // async getAllUsers(@Res() res: Response): Promise<Response> {
