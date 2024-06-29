@@ -874,4 +874,20 @@ export class OnboardingController {
       return res.status(500).json({ message: 'Failed to fetch user config',error:error?.message });
     }
   }
+
+
+  @Get('/hourly')
+  async getHourlyProductivity(@Res() res: Response): Promise<Response> {
+    try {
+      const data = await this.onboardingService.getProductivityData();
+      return res.status(200).json(data);
+    } catch (error) { 
+      return res.status(500).json({
+        message: 'Failed to fetch productivity data',
+        error: error.message,
+      });
+    }
+  }
+
+  
 }
