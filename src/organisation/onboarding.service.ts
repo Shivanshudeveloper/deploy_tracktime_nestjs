@@ -27,7 +27,9 @@ type UpdateConfigType = DeepPartial<User['config']>;
 @Injectable()
 export class OnboardingService {
   private s3: S3;
-  private flaskApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`; // Flask API URL
+  // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
+  // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-07-14`; // Flask API URL
+  private flaskBaseApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
@@ -651,12 +653,21 @@ export class OnboardingService {
     return isExist.device_uid;
   }
 
-  async getProductivityData(): Promise<any> {
+  async getProductivityData(organizationId: string,date:string): Promise<any> {
     try {
-      const response = await axios.get(this.flaskApiUrl);
+      const response = await axios.get(`${this.flaskBaseApiUrl}?date=${date}`, {
+        headers: {
+          "Content-Type": "application/json"
+        },
+        params: {
+          organization_uid: organizationId,
+          date:date
+        }
+      });
       return response.data;
     } catch (error) {
       throw new Error(`Failed to fetch data from Flask API: ${error.message}`);
     }
   }
+  
 }

@@ -279,15 +279,19 @@ export class OnboardingController {
       }
 
       console.log('OrganizationId', OrganizationId);
-      let team =
-        await this.onboardingService.findAllTeamsForOrganization(
+
+      let team = await this.onboardingService.findAllTeamsForOrganization(
           OrganizationId,
         );
+
       console.log('team', team);
+
       if (!team.length) {
+
         return res
           .status(404)
           .json({ message: 'No team in the organization Please create one!' });
+          
       }
 
       return res.json({ team: team });
@@ -929,15 +933,30 @@ export class OnboardingController {
   }
 
   @Get('/hourly')
-  async getHourlyProductivity(@Res() res: Response): Promise<Response> {
-    try {
-      const data = await this.onboardingService.getProductivityData();
-      return res.status(200).json(data);
-    } catch (error) {
-      return res.status(500).json({
-        message: 'Failed to fetch productivity data',
-        error: error.message,
-      });
+async getHourlyProductivity(@Res() res: Response, @Req() req: Request): Promise<Response> {
+  try {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+
+    if (!OrganizationId) {
+      return res.status(404).json({ error: 'Organization not found !!' });
     }
+
+    const date = req.query.date as string;
+    const dateString = Array.isArray(date) ? date[0] : (date || new Date().toISOString().split('T')[0]);
+
+    const data = await this.onboardingService.getProductivityData(OrganizationId, dateString);
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to fetch productivity data',
+      error: error.message,
+    });
   }
+}
+
 }
