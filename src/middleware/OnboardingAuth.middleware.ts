@@ -29,7 +29,8 @@ export class OnbaordingAuthMiddleware implements NestMiddleware {
       if (!isValid) {
         return res.status(401).json({ message: 'Invalid token' });
       }
-      // console.log(isValid.id);
+
+      console.log(isValid.id);
       // const OrganizationAdminId = isValid?.id;
       let organizationAdminId = await isValid?.id; 
       organizationAdminId = await this.isValidOrganizationAndAdmin(organizationAdminId);

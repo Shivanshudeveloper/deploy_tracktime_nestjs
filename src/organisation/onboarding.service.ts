@@ -29,7 +29,7 @@ export class OnboardingService {
   private s3: S3;
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-07-14`; // Flask API URL
-  private flaskBaseApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`
+  private flaskBaseApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity`;
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
@@ -139,7 +139,9 @@ export class OnboardingService {
     const existingTeam = await this.teamRepository.find({
       where: { organizationId: createTeamDto?.organizationId },
     });
-    const isExistTeam = existingTeam.find(t=>t?.name === createTeamDto.name);
+    const isExistTeam = existingTeam.find(
+      (t) => t?.name === createTeamDto.name,
+    );
     if (existingTeam?.length && isExistTeam?.id) {
       console.log('Existing team found:', existingTeam);
       return isExistTeam;
@@ -318,29 +320,29 @@ export class OnboardingService {
   }
 
   //service for updating user configs
-  async updateUserConfig(id: string, status: string): Promise<User> {
+  async updateUserConfig(id: string, status: string): Promise<Devices> {
     if (!id) {
       return null;
     }
 
-    let userDetails = await this.userRepository.findOne({
-      where: { userUUID: id },
+    let userDetails = await this.devicesRepository.findOne({
+      where: { device_uid: id },
     });
 
     if (!userDetails) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
+    // console.log('status',status);
     let updatedConfig: UpdateConfigType = {
       trackTimeStatus: status as TrackTimeStatus,
     };
     try {
-      await this.userRepository.update(
-        { userUUID: id },
+      await this.devicesRepository.update(
+        { device_uid: id },
         { config: updatedConfig },
       );
-
-      userDetails = await this.userRepository.findOne({
-        where: { userUUID: id },
+      userDetails = await this.devicesRepository.findOne({
+        where: { device_uid: id },
       });
       return userDetails;
     } catch (error) {
@@ -482,8 +484,32 @@ export class OnboardingService {
         where: { device_uid: device_id },
         // where : {user_name:device_user_name}
       });
+      console.log("isExist before mac_address", isExist);
 
-      if (!isExist?.mac_address && mac_address) {
+      if (!isExist?.mac_address && mac_address && isExist?.user_uid) {
+        // Update the mac_address of the new device_id
+        const deviceToUpdate = await this.devicesRepository.findOne({ 
+          where: { device_uid: device_id },
+        });
+
+        let deviceMac = await this.devicesRepository.findOne({
+          where: { mac_address: mac_address },
+        });
+        
+        if(deviceMac.device_uid){
+          deviceMac.mac_address = null;
+          await this.devicesRepository.save(deviceMac);
+        }
+
+        if (deviceToUpdate) {
+          deviceToUpdate.mac_address = mac_address;
+          await this.devicesRepository.save(deviceToUpdate);
+        }
+
+
+        return deviceToUpdate?.device_uid;
+
+      }else if(isExist?.mac_address){
         isExist = await this.devicesRepository.findOne({
           where: { mac_address: mac_address },
         });
@@ -491,19 +517,19 @@ export class OnboardingService {
 
       console.log(isExist);
 
-      if (
-        isExist?.user_name &&
-        isExist?.user_name.toLowerCase() === device_user_name.toLowerCase()
-      ) {
-        return isExist?.device_uid;
-      }
-      console.log(
-        isExist?.user_name,
-        device_user_name,
-        isExist?.user_name == device_user_name,
-      );
+      // if (
+      //   isExist?.user_name &&
+      //   isExist?.user_name.toLowerCase() === device_user_name.toLowerCase()
+      // ) {
+      //   return isExist?.device_uid;
+      // }
+      // console.log(
+      //   isExist?.user_name,
+      //   device_user_name,
+      //   isExist?.user_name == device_user_name,
+      // );
 
-      return null;
+      return isExist?.device_uid;
     } catch (err) {
       console.log(err?.message);
       return null;
@@ -517,7 +543,7 @@ export class OnboardingService {
         where: { device_uid: deviceId },
       });
 
-      if (!user?.user_uid) {
+      if (!user?.device_uid) {
         return {
           tracktimeStatus: 'Resume',
           isPaid: false,
@@ -527,19 +553,19 @@ export class OnboardingService {
       // Assuming your User entity has a 'config' field
       // const { config } = user;
 
-      const configUser = await this.userRepository.findOne({
-        where: { userUUID: user?.user_uid },
-      });
+      // const configUser = await this.devicesRepository.findOne({
+      //   where: { device_uid: user?.user_uid },
+      // });
       const isPaid = await this.SubscriptionRepository.findOne({
         where: { organization_id: organizationId },
       });
-      const config = configUser.config;
       // Return the user's configuration and track time status or modify as needed
 
       console.log('user', user);
+      // console.log('configUser', configUser);
       return {
-        trackTimeStatus: config?.trackTimeStatus || 'Resume',
-        isPaid: config ? true : false,
+        trackTimeStatus: user?.config.trackTimeStatus || 'Resume',
+        isPaid: isPaid ? true : false,
       };
     } catch (error) {
       throw new Error('Failed to fetch user config');
@@ -653,21 +679,24 @@ export class OnboardingService {
     return isExist.device_uid;
   }
 
-  async getProductivityData(organizationId: string,date:string): Promise<any> {
+  async getProductivityData(
+    organizationId: string,
+    date: string,
+  ): Promise<any> {
     try {
       const response = await axios.get(`${this.flaskBaseApiUrl}?date=${date}`, {
         headers: {
-          "Content-Type": "application/json"
+          'Content-Type': 'application/json',
         },
         params: {
           organization_uid: organizationId,
-          date:date
-        }
+          date: date,
+        },
       });
+      console.log('flask_data: ' + response.data);
       return response.data;
     } catch (error) {
       throw new Error(`Failed to fetch data from Flask API: ${error.message}`);
     }
   }
-  
 }

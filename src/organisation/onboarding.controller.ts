@@ -397,108 +397,88 @@ export class OnboardingController {
     const organizationAdminIdString = Array.isArray(organizationAdminId)
       ? organizationAdminId[0]
       : organizationAdminId;
-
+  
     if (!organizationAdminIdString) {
       return res
         .status(400)
         .json({ message: 'Organization Admin ID is required' });
     }
-
+  
     console.log('organizationAdminId', organizationAdminIdString);
-
+  
     try {
       const OrganizationId =
         await this.organizationAdminService.findOrganizationById(
           organizationAdminIdString,
         );
-
+  
       if (!OrganizationId) {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
-
+  
       const devices =
         await this.onboardingService.findAllDevices(OrganizationId);
-
+  
       const users = await this.onboardingService.findAllUsers(OrganizationId);
       const images = await this.onboardingService.fetchScreenShot();
       const organization =
         await this.onboardingService.fetchAllOrganization(OrganizationId);
       const teams = await this.onboardingService.getAllTeam(OrganizationId);
-
-      /// addition of token authorization needed like which orgnaization is making request that will be send in headers and first decode it
-      // and use it to fetch the details about organization's devices and team.
-
+  
+      // Logging the fetched data to ensure it is correct
+      console.log('Fetched devices:', devices);
+      console.log('Fetched users:', users);
+      console.log('Fetched images:', images);
+      console.log('Fetched organization:', organization);
+      console.log('Fetched teams:', teams);
+  
       images.sort((a, b) => {
         const timeA = new Date(a.lastModified).getTime();
         const timeB = new Date(b.lastModified).getTime();
         return timeB - timeA;
       });
-
-      devices.map((user) => {
-        user['LatestImage'] = null;
-        user['userDetail'] = null;
-        user['organizationDetail'] = null;
-        user['teamDetail'] = null;
-        images.map((img) => {
+  
+      devices.forEach((device) => {
+        device['LatestImage'] = null;
+        device['userDetail'] = null;
+        device['organizationDetail'] = organization;
+        device['teamDetail'] = null;
+  
+        images.forEach((img) => {
           const userUUID = img?.key.split('/')[1].split('|')[1].split('.')[0];
-          // console.log(userUUID)
-          if (userUUID === user?.device_uid && !user['LatestImage']) {
-            user['LatestImage'] = img;
+          if (userUUID === device?.device_uid && !device['LatestImage']) {
+            device['LatestImage'] = img;
           }
-          return img;
         });
-
-        // for updating hte user details
-        // console.log("user.user_uid",user?.user_uid)
-        user?.user_uid &&
-          users.map((u) => {
-            const userUUID = u.userUUID;
-            // console.log('userUUID', userUUID);
-            if (user?.user_uid && user?.user_uid === userUUID) {
-              user['userDetail'] = u;
-              // user['user_name'] = u.userName;
+  
+        users.forEach((user) => {
+          if (device?.user_uid === user.userUUID) {
+            device['userDetail'] = user;
+          }
+        });
+  
+        teams.forEach((team) => {
+          users.forEach((user) => {
+            if (device?.user_uid === user.userUUID && user.teamId === team.id) {
+              device['teamDetail'] = team;
             }
-            return u;
           });
-
-        //for updating the orgnization details
-        user?.organization_uid && user?.organization_uid === organization?.id
-          ? (user['organizationDetail'] = organization)
-          : null;
-        // organization.map((org) => {
-        //   if (user?.organization_uid === org.id) {
-        //     user['OrganizationDetail'] = org;
-        //   }
-        //   return org;
-        // });
-
-        user?.user_uid &&
-          teams.map((team) => {
-            users.map((u) => {
-              if (user?.user_uid === u?.userUUID && u?.teamId === team?.id) {
-                console.log(team.name, u.userName);
-                user['teamDetail'] = team;
-              }
-              return u;
-            });
-            return team;
-          });
-        //for updating the orgnization details
-        // console.log(user)
-        if (user?.user_uid) {
-          // console.log(user?.user_name,user["teamDetail"]?.name)
-        }
-        return user;
+        });
+  
+        // Log the device after all assignments
+        console.log('Processed device:', device);
       });
-      // console.log(devices,"devices")
-      return res.status(200).json(devices);
+  
+      console.log('Final processed devices:', devices);
+      return res.status(200).json({devices,organization});
     } catch (error) {
+      console.error('Failed to fetch devices:', error);
       return res
         .status(500)
         .json({ message: 'Failed to fetch devices', error: error.message });
     }
   }
-
+  
   @Get('organization/users/:id')
   async getUserDetails(
     @Param('id') id: string,
@@ -558,26 +538,32 @@ export class OnboardingController {
     // @Param('userId') userId: string,
   ): Promise<any> {
     // Check if the requesting user is an admin
-    const organId = req.headers['organizationId'];
+    const organizationAdminIdString = req.headers['organizationAdminId'];
     const status = Body?.status;
-    const requestingUser = await this.userService.validateUserById(organId);
+    const OrganizationId = await this.organizationAdminService.findOrganizationById(
+      organizationAdminIdString,
+    );
+    const requestingUser = await this.onboardingService.validateDeviceById(id);
     // console.log(requestingUser)
+    // console.log(req.headers["authorization"]);
+    // console.log("organizationId",OrganizationId)
+    // console.log("requestingUser",requestingUser);
 
-    if (!requestingUser?.organization.id) {
+    if (!requestingUser?.organization_uid) {
       return res.status(401).json({
         message: 'Unauthorized: Only orgnaization can update track time status',
       });
     }
 
     try {
-      const userToUpdate = await this.userService.validateUserById(id);
+      const userToUpdate = await this.onboardingService.validateDeviceById(requestingUser?.device_uid);
       if (!userToUpdate) {
         return res.status(404).json({ message: 'User not found' });
       }
 
       // Update trackTimeStatus for the user
       const updatedUserData = await this.onboardingService.updateUserConfig(
-        id,
+        userToUpdate?.device_uid,
         status,
       );
 
@@ -837,6 +823,7 @@ export class OnboardingController {
     const mac_address = Body?.mac_address;
     const username = Body?.device_user_name;
     console.log(device_id, username, mac_address, organizationId);
+
     try {
       if (!mac_address || !organizationId || !username) {
         return res.status(404).json({ message: 'All fields are required' });
@@ -852,8 +839,8 @@ export class OnboardingController {
           .json({ message: "Organization with Id doesn't exist" });
       }
       // let userExist = await this.onboardingService.findUserByEmail(email);
-      let deviceExist = '';
-      console.log('device-id', device_id);
+      let deviceExist = null;
+      console.log('device_id_in_here', device_id);
       if (device_id !== 'null') {
         console.log('checking with device-id', device_id);
         let checkDeviceId =
@@ -863,6 +850,7 @@ export class OnboardingController {
             username,
           );
         deviceExist = checkDeviceId;
+        
       } else {
         console.log('checking without device-id', device_id);
         let checkMacAddres = await this.onboardingService.checkDeviceIdExist(
@@ -895,6 +883,8 @@ export class OnboardingController {
         deviceExist.toString(),
         organizationId,
       );
+
+      console.log("userConfig",userConfig);
       // Retrieve user config and track time status based on user ID
 
       // if (!userConfig) {

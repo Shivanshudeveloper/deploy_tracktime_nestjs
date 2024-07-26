@@ -1,6 +1,19 @@
+import { Type } from 'class-transformer';
+import { IsEnum, ValidateNested } from 'class-validator';
 import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
 
+
+export enum TrackTimeStatus {
+  Pause = 'Pause',
+  Resume = 'Resume',
+  StopForever = 'StopForever',
+}
+class userConfig{
+  @IsEnum(TrackTimeStatus)
+  trackTimeStatus: TrackTimeStatus
+}
 @Entity('devices')
+
 export class Devices {
   @PrimaryGeneratedColumn('uuid')
   device_uid: string;
@@ -19,4 +32,9 @@ export class Devices {
 
   @Column({type: 'varchar',length:17,nullable:true})  
   mac_address:string;
+
+  @ValidateNested()
+  @Type(() => userConfig)
+  @Column('json', { nullable: true })
+  config: userConfig;
 }
