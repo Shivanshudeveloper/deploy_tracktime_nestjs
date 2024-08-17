@@ -40,6 +40,7 @@ import { organizationAdminService } from './organisation/OrganizationAdmin.servi
 import { OrganizationAdminController } from './organisation/OrgnaizationRegister.controller';
 import { CreateOrganizationAdmin } from './organisation/OrganizationAdmin.entity';
 import { OnbaordingAuthMiddleware } from './middleware/OnboardingAuth.middleware'; 
+import { CalculatedLogic } from './organisation/calculatedLogic.entity';
 
 
 @Module({
@@ -65,6 +66,7 @@ import { OnbaordingAuthMiddleware } from './middleware/OnboardingAuth.middleware
       trackingPolicyEntity,
       Devices,
       CreateOrganizationAdmin,
+      CalculatedLogic,
     ]),
 
     JwtModule.register({

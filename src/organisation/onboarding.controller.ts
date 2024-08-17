@@ -25,6 +25,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { JwtService } from '@nestjs/jwt';
 import { organizationAdminService } from './OrganizationAdmin.service';
+import * as moment from 'moment';
+import { CalculatedLogic } from './calculatedLogic.entity';
+import { CreateCalculatedLogicDto } from './dto/calculatedLogic.dto';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -142,6 +145,44 @@ export class OnboardingController {
         message: 'Failed to fetch images from wasabi.',
         error: error?.message,
       });
+    }
+  }
+
+  @Get('/organization/getAttendance')
+  async getAttendanceForUser(@Res() res: Response, @Req() req: Request, @Query('from') from: string, @Query('to') to: string) {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId) ? organizationAdminId[0] : organizationAdminId;
+
+      console.log(organizationAdminId,organizationAdminIdString);
+
+      const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+      console.log(OrganizationId)
+      // const OrganizationId = "c9b8dad0-2028-4ef5-8332-31f47033da92";
+      
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      let fromDate: Date;
+      let toDate: Date;
+
+      if (from) {
+        fromDate = new Date(from);
+      } else {
+        fromDate = moment().subtract(7, 'days').toDate();
+      }
+
+      if (to) {
+        toDate = new Date(to);
+      } else {
+        toDate = new Date();
+      }
+
+      const attendanceData = await this.onboardingService.getWeeklyAttendance(OrganizationId, fromDate, toDate);
+      return res.status(200).json(attendanceData);
+    } catch (error) {
+      return res.status(500).json({ message: 'Failed to fetch devices', error: error?.message });
     }
   }
 
@@ -923,30 +964,60 @@ export class OnboardingController {
   }
 
   @Get('/hourly')
-async getHourlyProductivity(@Res() res: Response, @Req() req: Request): Promise<Response> {
-  try {
-    const organizationAdminId = req.headers['organizationAdminId'];
-    const organizationAdminIdString = Array.isArray(organizationAdminId)
-      ? organizationAdminId[0]
-      : organizationAdminId;
+  async getHourlyProductivity(@Res() res: Response, @Req() req: Request): Promise<Response> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
 
-    const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+      const OrganizationId = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
 
-    if (!OrganizationId) {
-      return res.status(404).json({ error: 'Organization not found !!' });
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      const date = req.query.date as string;
+      const dateString = Array.isArray(date) ? date[0] : (date || new Date().toISOString().split('T')[0]);
+
+      const data = await this.onboardingService.getProductivityData(OrganizationId, dateString);
+      return res.status(200).json(data);
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to fetch productivity data',
+        error: error.message,
+      });
     }
-
-    const date = req.query.date as string;
-    const dateString = Array.isArray(date) ? date[0] : (date || new Date().toISOString().split('T')[0]);
-
-    const data = await this.onboardingService.getProductivityData(OrganizationId, dateString);
-    return res.status(200).json(data);
-  } catch (error) {
-    return res.status(500).json({
-      message: 'Failed to fetch productivity data',
-      error: error.message,
-    });
   }
-}
+
+  @Post("/organization/calculatedLogic")
+  async createCalculatedLogic(
+    @Res() res: Response,
+    @Req() req: Request,
+    @Body() body: CreateCalculatedLogicDto,
+  ): Promise<any> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+  
+      const organization = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+  
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+      console.log(organization);
+      const calculatedLogic = await this.onboardingService.createCalculatedLogic(body, organization);
+      
+      return res.status(201).json({calculatedLogic,message:"Caculated logic successfully created."});
+  
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to create Calculated Logic',
+        error: error?.message,
+      });
+    }
+  }
 
 }
