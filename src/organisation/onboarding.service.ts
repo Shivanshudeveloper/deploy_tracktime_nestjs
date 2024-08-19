@@ -23,7 +23,7 @@ import axios from 'axios';
 import { CalculatedLogic } from './calculatedLogic.entity';
 import { AttendanceDto } from './dto/attendance.dto';
 import { CreateCalculatedLogicDto } from './dto/calculatedLogic.dto';
-const DeployFlaskBaseApi = 'https://python-link-classification-1.onrender.com';
+const DeployFlaskBaseApi = 'https://python-link-classification-lg5i.onrender.com';
 const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
 
@@ -32,7 +32,7 @@ export class OnboardingService {
   private s3: S3;
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-07-14`; // Flask API URL
-  private flaskBaseApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity`;
+  private flaskBaseApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`;
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
