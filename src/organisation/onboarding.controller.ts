@@ -37,7 +37,7 @@ export class OnboardingController {
     private readonly jwtService: JwtService,
     private readonly organizationAdminService: organizationAdminService,
   ) {}
-
+ 
   @Post('organization/register')
   async createOrganization(
     @Body() createOrganizationDto: CreateOrganizationDto,
