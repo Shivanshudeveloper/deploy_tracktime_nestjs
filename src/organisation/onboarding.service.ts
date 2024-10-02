@@ -27,7 +27,7 @@ import { CreateCalculatedLogicDto } from './dto/calculatedLogic.dto';
 import { CreateOrganizationDTO } from './dto/organization.dto';
 import { Policy } from './trackingpolicy.entity';
 import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
-const DeployFlaskBaseApi = 'https://python-link-classification-zckw.onrender.com';
+const DeployFlaskBaseApi = 'https://python-link-classification-stac.onrender.com';
 const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
 
