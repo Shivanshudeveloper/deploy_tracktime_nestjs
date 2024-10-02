@@ -20,4 +20,5 @@ export class CreateDesktopApplicationDto {
   @IsOptional()
   @IsString()
   version?: string; // Optional field for specifying the application version
+
 }

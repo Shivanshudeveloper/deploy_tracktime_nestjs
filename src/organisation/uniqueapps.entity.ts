@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('unique_apps')
 export class UniqueApps {
@@ -22,4 +22,10 @@ export class UniqueApps {
 
   @Column()
   parent_category: string;
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
 }

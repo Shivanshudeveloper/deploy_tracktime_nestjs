@@ -38,6 +38,7 @@ export class OnbaordingAuthMiddleware implements NestMiddleware {
       if(!organizationAdminId) {
         return res.status(401).json({ message: 'Admin Id not present' });
       }
+      console.log("organizationAdminId",organizationAdminId);
       req.headers["organizationAdminId"] = organizationAdminId;
       // console.log(organizationAdminId)
       next(); 

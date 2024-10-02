@@ -1,5 +1,5 @@
 import { applicationDTO } from './dto/applications.dto';
-import { CreateTeamsDto } from './dto/teams.dto';
+import { CreateTeamDTO } from './dto/teams.dto';
 import {
   Body,
   Controller,
@@ -12,12 +12,10 @@ import {
   Query,
 } from '@nestjs/common';
 import { teamAndTeamMemberService } from './teams.service';
-import { Teams } from './teams.entity';
 import { CreateTeamMembersDto } from './dto/teammembers.dto';
 import { TeamMember } from './teammembers.entity';
 import { UUID } from 'crypto';
 import { registeredUsersDto } from './dto/registeredusers.dto';
-import { RegisteredUser } from './registeredusers.entity';
 import { UpdateUserDto } from './dto/UpdateUserDto.dto';
 import { updateOrgDto } from './dto/updateorg.dto';
 import { SubscriptionDto } from './dto/subscription.dto';
@@ -31,30 +29,32 @@ import { UniqueApps } from './uniqueapps.entity';
 import { DesktopAppDTO } from './dto/desktopapp.dto';
 import { DesktopAppEntity } from './desktopapp.entity';
 import { applcationEntity } from './application.entity';
-import { productivitySettingDTO } from './dto/prodsetting.dto';
-import { productivitySettingEntity } from './prodsetting.entity';
-import { trackingPolicyDTO } from './dto/tracingpolicy.dto';
-import { trackingPolicyEntity } from './trackingpolicy.entity';
+import { CreateProductivitySettingDTO } from './dto/prodsetting.dto';
+import { ProductivitySettingEntity } from './prodsetting.entity';
+import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
+import { Policy } from './trackingpolicy.entity';
 import { CreateDevicesDto } from './dto/devices.dto';
 import { Devices } from './devices.entity';
+import { CreateUserDTO } from './dto/users.dto';
+import { User } from 'src/users/user.entity';
 @Controller('team')
 export class TeamAndTeamMemberController {
   constructor(
     private readonly teamAndTeamMemberService: teamAndTeamMemberService,
   ) {}
 
-  @Post('/addteam')
-  async createTeam(@Body() CreateTeamsDto: CreateTeamsDto): Promise<Teams> {
-    return this.teamAndTeamMemberService.createTeam(CreateTeamsDto);
-  }
-  @Get('/getteam')
-  async getTeam(): Promise<Teams[]> {
-    return this.teamAndTeamMemberService.getTeam();
-  }
-  @Put('/updateteam/:id')
-  updateById(@Param('id') id: UUID, @Body() dto: CreateTeamsDto) {
-    return this.teamAndTeamMemberService.updateById(id, dto);
-  }
+  // @Post('/addteam')
+  // async createTeam(@Body() CreateTeamsDto: CreateTeamDTO): Promise<Teams> {
+  //   return this.teamAndTeamMemberService.createTeam(CreateTeamsDto);
+  // }
+  // @Get('/getteam')
+  // async getTeam(): Promise<Teams[]> {
+  //   return this.teamAndTeamMemberService.getTeam();
+  // }
+  // @Put('/updateteam/:id')
+  // updateById(@Param('id') id: UUID, @Body() dto: CreateTeamDTO) {
+  //   return this.teamAndTeamMemberService.updateById(id, dto);
+  // }
   @Delete('/deleteteam/:id')
   deleteById(@Param('id') id: UUID) {
     return this.teamAndTeamMemberService.deleteById(id);
@@ -89,16 +89,16 @@ export class TeamAndTeamMemberController {
   //users
   @Post('/registeruser')
   async registerUser(
-    @Body() registeredUsersDto: registeredUsersDto,
-  ): Promise<RegisteredUser> {
+    @Body() registeredUsersDto: CreateUserDTO,
+  ): Promise<User> {
     return this.teamAndTeamMemberService.registerUser(registeredUsersDto);
   }
   @Get('/getusers')
-  async getUsers(): Promise<RegisteredUser[]> {
+  async getUsers(): Promise<User[]> {
     return this.teamAndTeamMemberService.getUsers();
   }
   @Put('/updateusers/:id')
-  updateUserById(@Param('id') id: UUID, @Body() dto: UpdateUserDto) {
+  updateUserById(@Param('id') id: UUID, @Body() dto: CreateUserDTO) {
     return this.teamAndTeamMemberService.updateUserById(id, dto);
   }
   @Delete('/deleteuser/:id')
@@ -251,18 +251,18 @@ export class TeamAndTeamMemberController {
   //productivity settings
   @Post('/createsetting')
   async createSetting(
-    @Body() productivitySettingDTO: productivitySettingDTO,
-  ): Promise<productivitySettingEntity> {
-    return this.teamAndTeamMemberService.createSetting(productivitySettingDTO);
+    @Body() CreateProductivitySettingDTO: CreateProductivitySettingDTO,
+  ): Promise<ProductivitySettingEntity> {
+    return this.teamAndTeamMemberService.createSetting(CreateProductivitySettingDTO);
   }
   @Get('/getsetting')
-  async getSetting(): Promise<productivitySettingEntity[]> {
+  async getSetting(): Promise<ProductivitySettingEntity[]> {
     return this.teamAndTeamMemberService.getSetting();
   }
   @Put('/updatesetting/:id')
   async updateSettingById(
     @Param('id') id: UUID,
-    @Body() dto: productivitySettingDTO,
+    @Body() dto: CreateProductivitySettingDTO,
   ) {
     return this.teamAndTeamMemberService.updateSettingById(id, dto);
   }
@@ -271,23 +271,23 @@ export class TeamAndTeamMemberController {
     return this.teamAndTeamMemberService.deleteSettingById(id);
   }
   //tracking policy
-  @Post('/createpolicy')
-  async createPolicy(
-    @Body() trackingPolicyDTO: trackingPolicyDTO,
-  ): Promise<trackingPolicyEntity> {
-    return this.teamAndTeamMemberService.createPolicy(trackingPolicyDTO);
-  }
+  // @Post('/createpolicy')
+  // async createPolicy(
+  //   @Body() trackingPolicyDTO: TrackingPolicyDTO,
+  // ): Promise<Policy> {
+  //   return this.teamAndTeamMemberService.createPolicy(trackingPolicyDTO);
+  // }
   @Get('/getpolicy')
-  async getPolicy(): Promise<trackingPolicyEntity[]> {
+  async getPolicy(): Promise<Policy[]> {
     return this.teamAndTeamMemberService.getPolicy();
   }
-  @Put('/updatepolicy/:id')
-  async updatePolicyById(
-    @Param('id') id: UUID,
-    @Body() dto: trackingPolicyDTO,
-  ) {
-    return this.teamAndTeamMemberService.updatePolicyById(id, dto);
-  }
+  // @Put('/updatepolicy/:id')
+  // async updatePolicyById(
+  //   @Param('id') id: UUID,
+  //   @Body() dto: trackingPolicyDTO,
+  // ) {
+  //   return this.teamAndTeamMemberService.updatePolicyById(id, dto);
+  // }
   @Delete('/deletepolicy/:id')
   async deletePolicyById(@Param('id') id: UUID) {
     return this.teamAndTeamMemberService.deletePolicyById(id);

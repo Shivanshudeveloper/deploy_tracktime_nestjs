@@ -1,4 +1,4 @@
-import { IsBoolean, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString, IsUUID } from 'class-validator';
 
 export class EmailReportSettingDto {
   @IsUUID()
@@ -18,4 +18,6 @@ export class EmailReportSettingDto {
 
   @IsString()
   type: string;
+
+
 }

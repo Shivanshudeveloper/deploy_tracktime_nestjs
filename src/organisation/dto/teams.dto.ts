@@ -1,18 +1,19 @@
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsUUID, IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
-export class CreateTeamsDto {
+export class CreateTeamDTO {
   @IsUUID()
-  @IsNotEmpty()
-  organization_id: string;
+  @IsOptional()
+  organizationId: string; // UUID of the organization this team belongs to
 
-  @IsUUID()
-  @IsNotEmpty()
-  policy_uuid: string;
-
-  @IsNotEmpty()
   @IsString()
-  name: string;
+  name: string; // Team name
 
-  @IsNotEmpty()
-  status: number;
+  // @IsString()
+  // @IsOptional()
+  // manager: string; // Team manager's name (optional, can be omitted if not applicable)
+
+  // @IsString()
+  // status: string; // Status of the team (e.g., active/inactive)
+
+
 }

@@ -1,5 +1,5 @@
 import { IsNotEmpty} from 'class-validator';
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity("OrganizationAdmin")
 
@@ -21,7 +21,13 @@ export class CreateOrganizationAdmin {
   @Column({default:false})
   isAdmin: boolean = false;
 
-  @Column()
+  @Column({ nullable: true, default: null })
   OrganizationId: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
  

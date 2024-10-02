@@ -1,7 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Team } from './team.entity';
 import { User } from 'src/users/user.entity';
 import { IsNotEmpty } from 'class-validator';
+import { Policy } from './trackingpolicy.entity';
 
 @Entity("organization")
   
@@ -21,6 +22,10 @@ export class Organization {
   @IsNotEmpty()
   country: string; // Assuming there's a country field
 
+  @Column()
+  @IsNotEmpty()
+  timeZone: string; // Assuming there's a country field
+
   // @Column('int')
   @IsNotEmpty()
   teamSize: string; // Changed type to 'int' to reflect 'INTEGER'
@@ -34,4 +39,13 @@ export class Organization {
 
   @OneToMany(() => Team, (team) => team.organization)
   teams: Team[];
+
+  @OneToMany(() => Policy, (policy)=> policy.policyId)
+  policy: Policy[];
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
 }

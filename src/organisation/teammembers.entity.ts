@@ -5,8 +5,9 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
-import { Teams } from './teams.entity';
+import { Team } from './team.entity';
 
 @Entity('teammembers')
 export class TeamMember {
@@ -40,7 +41,14 @@ export class TeamMember {
   @CreateDateColumn({ name: 'timestamp' })
   timestamp: Date;
   
-  @ManyToOne(() => Teams, (teams) => teams.teamMembers)
+  @ManyToOne(() => Team, (teams) => teams.teamMembers)
   @JoinColumn({ name: 'team_uuid' })
-  team: Teams;
+  team: Team;
+
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
 }

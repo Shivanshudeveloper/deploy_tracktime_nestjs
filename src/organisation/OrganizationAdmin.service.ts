@@ -33,10 +33,12 @@ export class organizationAdminService {
     }
   }
 
-  async createAdminOrganization(OrganizationAdmin: Partial<CreateOrganizationAdmin>): Promise<any> {
+  async createAdminOrganization(OrganizationAdmin: Partial<CreateOrganizationAdminDto>): Promise<any> {
+    console.log(OrganizationAdmin);
     try {
       let user = await this.organizationAdminRepository.create({
         ...OrganizationAdmin,
+        OrganizationId: OrganizationAdmin?.OrganizationId || null,
         isAdmin:false,
       });
       const errors = await validate(user);

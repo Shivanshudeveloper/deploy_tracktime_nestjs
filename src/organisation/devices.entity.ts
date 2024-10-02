@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsEnum, ValidateNested } from 'class-validator';
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { IsEnum, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 
 export enum TrackTimeStatus {
@@ -37,4 +37,10 @@ export class Devices {
   @Type(() => userConfig)
   @Column('json', { nullable: true })
   config: userConfig;
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
 }

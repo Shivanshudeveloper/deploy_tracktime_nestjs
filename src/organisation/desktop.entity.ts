@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { IsNotEmpty, IsString } from 'class-validator';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity()
 export class DesktopApplication {
@@ -19,4 +20,10 @@ export class DesktopApplication {
 
   @Column({default:'1.0.0'}) 
   version:string;
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
 }

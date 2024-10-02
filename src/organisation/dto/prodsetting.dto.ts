@@ -1,18 +1,19 @@
-import { IsUUID, IsString, IsJSON } from 'class-validator';
+import { IsUUID, IsString, IsJSON, IsArray, IsNotEmpty } from 'class-validator';
 
-export class productivitySettingDTO {
+export class CreateProductivitySettingDTO {
   @IsUUID()
   organization_uid: string;
 
   @IsString()
-  name: string;
+  name: string; // Name of the productivity setting
 
   @IsString()
-  productivity_status: string;
+  productivity_status: string; // Status of productivity (e.g., "productive", "unproductive")
 
   @IsJSON()
-  type: JSON;
+  type: JSON; // A JSON object containing details about the productivity type
 
-  @IsUUID()
-  policy_uuid: string;
+  @IsArray()
+  @IsUUID(undefined, { each: true }) // Array of policy UUIDs
+  policyList: string[]; // List of Policy UUIDs
 }

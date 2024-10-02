@@ -1,6 +1,6 @@
 import { CreateDevicesDto } from './dto/devices.dto';
-import { trackingPolicyDTO } from './dto/tracingpolicy.dto';
-import { productivitySettingDTO } from './dto/prodsetting.dto';
+import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
+import { CreateProductivitySettingDTO } from './dto/prodsetting.dto';
 import { applicationDTO } from './dto/applications.dto';
 import { DesktopAppDTO } from './dto/desktopapp.dto';
 import { CreateUniqueAppsDto } from './dto/uniqueapps.dto';
@@ -8,15 +8,13 @@ import { CreateCategoryDto } from './dto/category.dto';
 import { EmailReportSettingDto } from './dto/emailreportsetting.dto';
 import { SubscriptionDto } from './dto/subscription.dto';
 import { registeredUsersDto } from './dto/registeredusers.dto';
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Teams } from './teams.entity';
 import { TeamMember } from './teammembers.entity';
 import { Repository } from 'typeorm';
-import { CreateTeamsDto } from './dto/teams.dto';
+import { CreateTeamDTO } from './dto/teams.dto';
 import { CreateTeamMembersDto } from './dto/teammembers.dto';
 import { UUID } from 'crypto';
-import { RegisteredUser } from './registeredusers.entity';
 import { UpdateUserDto } from './dto/UpdateUserDto.dto';
 import { CreateOrganizationDto } from './dto/organizations.dto';
 import { updateOrgDto } from './dto/updateorg.dto';
@@ -27,19 +25,22 @@ import { UniqueApps } from './uniqueapps.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { DesktopAppEntity } from './desktopapp.entity';
 import { applcationEntity } from './application.entity';
-import { productivitySettingEntity } from './prodsetting.entity';
-import { trackingPolicyEntity } from './trackingpolicy.entity';
+import { ProductivitySettingEntity } from './prodsetting.entity';
+import { Policy } from './trackingpolicy.entity';
 import { Devices } from './devices.entity';
 import { Organization } from './organisation.entity';
+import { Team } from './team.entity';
+import { User } from 'src/users/user.entity';
+import { CreateUserDTO } from './dto/users.dto';
 @Injectable()
 export class teamAndTeamMemberService {
   constructor(
-    @InjectRepository(Teams)
-    private teamRepository: Repository<Teams>,
+    @InjectRepository(Team)
+    private teamRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMemberRepository: Repository<TeamMember>,
-    @InjectRepository(RegisteredUser)
-    private registeredUserRepository: Repository<RegisteredUser>,
+    @InjectRepository(User)
+    private registeredUserRepository: Repository<User>,
     @InjectRepository(Organization)
     private orgRepository: Repository<Organization>,
     @InjectRepository(Subscription)
@@ -54,40 +55,40 @@ export class teamAndTeamMemberService {
     private desktopAppsRepository: Repository<DesktopAppEntity>,
     @InjectRepository(applcationEntity)
     private appRepository: Repository<applcationEntity>,
-    @InjectRepository(productivitySettingEntity)
-    private prodRepository: Repository<productivitySettingEntity>,
-    @InjectRepository(trackingPolicyEntity)
-    private policyRepository: Repository<trackingPolicyEntity>,
+    @InjectRepository(ProductivitySettingEntity)
+    private prodRepository: Repository<ProductivitySettingEntity>,
+    @InjectRepository(Policy)
+    private policyRepository: Repository<Policy>,
     @InjectRepository(Devices)
     private deviceRepository: Repository<Devices>,
   ) {}
   //create team
-  async createTeam(createTeamsDto: CreateTeamsDto): Promise<Teams> {
-    const team = this.teamRepository.create({
-      team_uuid: uuidv4(),
-      organization_id: createTeamsDto.organization_id,
-      policy_uuid: createTeamsDto.policy_uuid,
-      name: createTeamsDto.name,
-      status: createTeamsDto.status,
-    });
+  // async createTeam(createTeamsDto: CreateTeamMembersDto): Promise<Teams> {
+  //   const team = this.teamRepository.create({
+  //     team_uuid: uuidv4(),
+  //     organization_id: createTeamsDto.organization_id,
+  //     policy_uuid: createTeamsDto.policy_uuid,
+  //     name: createTeamsDto.team_name,
+  //     status:false,
+  //   });
 
-    const savedTeam = await this.teamRepository.save(team);
-    console.log('Saved Team:', savedTeam);
-    return savedTeam;
-  }
+  //   const savedTeam = await this.teamRepository.save(team);
+  //   console.log('Saved Team:', savedTeam);
+  //   return savedTeam;
+  // }
   //get team
-  async getTeam(): Promise<Teams[]> {
+  async getTeam(): Promise<Team[]> {
     return this.teamRepository.find();
   }
-  async updateById(team_uuid: UUID, dto: CreateTeamsDto) {
-    await this.teamRepository.update(team_uuid, dto);
-    return this.teamRepository.findOne({ where: { team_uuid } });
-  }
+  // async updateById(team_uuid: UUID, dto: CreateTeamDTO) {
+  //   await this.teamRepository.update(team_uuid, dto);
+  //   return this.teamRepository.findOne({ where: { team_uuid } });
+  // }
   async deleteById(team_uuid: UUID) {
     this.teamMemberRepository.delete({ team_uuid });
-    return await this.teamRepository.delete({ team_uuid });
+    return await this.teamRepository.delete({  });
   }
-  async getTeamDetailsByTeamId(team_uuid: string): Promise<Teams[]> {
+  async getTeamDetailsByTeamId(team_uuid: string): Promise<Team[]> {
     console.log(`getTeamDetails called with team_uuid: ${team_uuid}`);
     try {
       const teams = await this.teamRepository
@@ -139,8 +140,8 @@ export class teamAndTeamMemberService {
   }
   //users
   async registerUser(
-    registeredUsersDto: registeredUsersDto,
-  ): Promise<RegisteredUser> {
+    registeredUsersDto: CreateUserDTO,
+  ): Promise<User> {
     const user = this.registeredUserRepository.create({
       // user_uid: uuidv4(),
       // organization_id: registeredUsersDto.organization_id,
@@ -152,8 +153,8 @@ export class teamAndTeamMemberService {
       // account_status: registeredUsersDto.account_status,
       
     });
-    const organization_id = registeredUsersDto.organization_id;
-    const organization_name = registeredUsersDto.organization_name;
+    const organization_id = registeredUsersDto.organizationId;
+    const organization_name = registeredUsersDto.organizationId;
 
     const org = this.orgRepository.create({
       id: organization_id,
@@ -165,15 +166,15 @@ export class teamAndTeamMemberService {
     console.log('Saved Organization:', savedOrg);
     return savedUser;
   }
-  async getUsers(): Promise<RegisteredUser[]> {
+  async getUsers(): Promise<User[]> {
     return this.registeredUserRepository.find();
   }
-  async updateUserById(user_uid: UUID, dto: UpdateUserDto) {
+  async updateUserById(user_uid: UUID, dto: CreateUserDTO) {
     await this.registeredUserRepository.update(user_uid, dto);
-    return this.registeredUserRepository.findOne({ where: { user_uid } });
+    return this.registeredUserRepository.findOne({ where: { userUUID:user_uid } });
   }
   async deleteUserById(user_uid: UUID) {
-    return await this.registeredUserRepository.delete({ user_uid });
+    return await this.registeredUserRepository.delete({ userUUID:user_uid });
   }
   //organization
   async updateOrganizationById(organization_id: UUID, dto: updateOrgDto) {
@@ -377,21 +378,23 @@ export class teamAndTeamMemberService {
   }
   //productivity settings
   async createSetting(
-    productivitySettingDTO: productivitySettingDTO,
-  ): Promise<productivitySettingEntity> {
+    CreateProductivitySettingDTO: CreateProductivitySettingDTO,
+  ): Promise<ProductivitySettingEntity> {
+    const policies = await this.policyRepository.findByIds(CreateProductivitySettingDTO.policyList)
     const setting = this.prodRepository.create({
       setting_uuid: uuidv4(),
-      organization_uid: productivitySettingDTO.organization_uid,
-      name: productivitySettingDTO.name,
-      productivity_status: productivitySettingDTO.productivity_status,
-      type: productivitySettingDTO.type,
-      policy_uuid: productivitySettingDTO.policy_uuid,
-    });
+      organization_uid: CreateProductivitySettingDTO.organization_uid,
+      name: CreateProductivitySettingDTO.name,
+      productivity_status: CreateProductivitySettingDTO.productivity_status,
+      type: CreateProductivitySettingDTO.type,
+      policyList:policies ,
+    })
     const savedSetting = await this.prodRepository.save(setting);
+
     console.log('Saved Setting:', savedSetting);
     return savedSetting;
   }
-  async getSetting(): Promise<productivitySettingEntity[]> {
+  async getSetting(): Promise<ProductivitySettingEntity[]> {
     const apps = await this.prodRepository.find();
 
     // Parse the policy_content if it is a string
@@ -408,37 +411,59 @@ export class teamAndTeamMemberService {
     console.log(parsedSetting);
     return parsedSetting;
   }
-  async updateSettingById(setting_uuid: UUID, dto: productivitySettingDTO) {
-    await this.prodRepository.update(setting_uuid, dto);
-    return this.prodRepository.findOne({ where: { setting_uuid } });
+  async updateSettingById(setting_uuid: UUID, dto: CreateProductivitySettingDTO) {
+    const { organization_uid, name, productivity_status, type, policyList } = dto;
+
+    // Fetch the policies by the UUIDs provided in the DTO
+    const policies = await this.policyRepository.findByIds(policyList);
+  
+    if (policies.length !== policyList.length) {
+      throw new BadRequestException('One or more policies not found');
+    }
+  
+    const setting = await this.prodRepository.findOne({ where: { setting_uuid } });
+    if (!setting) {
+      throw new NotFoundException('Setting not found');
+    }
+  
+    setting.organization_uid = organization_uid;
+    setting.name = name;
+    setting.productivity_status = productivity_status;
+    setting.type = type;
+    setting.policyList = policies; // Update the policies with actual entities
   }
   async deleteSettingById(setting_uuid: UUID) {
     return await this.prodRepository.delete({ setting_uuid });
   }
   //tracking policy
   async createPolicy(
-    trackingPolicyDTO: trackingPolicyDTO,
-  ): Promise<trackingPolicyEntity> {
-    const policy = this.policyRepository.create({
-      policy_uuid: uuidv4(),
-      organization_uid: trackingPolicyDTO.organization_uid,
-      policy_name: trackingPolicyDTO.policy_name,
-      policy_content: trackingPolicyDTO.policy_content,
-      team_uuid: trackingPolicyDTO.team_uuid,
-    });
-    const savedPolicy = await this.policyRepository.save(policy);
-    console.log('Saved Policy:', savedPolicy);
-    return savedPolicy;
+    trackingPolicyDTO: TrackingPolicyDTO,
+  ): Promise<string> {
+    const organization = await this.orgRepository.findOne({where: {id: trackingPolicyDTO.organizationId}})
+    // const policy = this.policyRepository.create({
+    //   policyId: uuidv4(),
+    //   organization: trackingPolicyDTO.organization_uid,
+    //   assignedTeams: trackingPolicyDTO.team_uuid,
+    //   assignedUsers: trackingPolicyDTO.policy_name
+
+    //   // organization_uid: trackingPolicyDTO.organization_uid,
+    //   // policy_name: trackingPolicyDTO.policy_name,
+    //   // policy_content: trackingPolicyDTO.policy_content,
+    //   // team_uuid: trackingPolicyDTO.team_uuid
+    // });
+    // const savedPolicy = await this.policyRepository.save(policy);
+    // console.log('Saved Policy:', savedPolicy);
+    return "savedPolicy";
   }
-  async getPolicy(): Promise<trackingPolicyEntity[]> {
+  async getPolicy(): Promise<Policy[]> {
     const apps = await this.policyRepository.find();
 
     // Parse the policy_content if it is a string
     const parsedPolicy = apps.map((app) => {
-      if (typeof app.policy_content === 'string') {
+      if (typeof app.policyId === 'string') {
         return {
           ...app,
-          policy_content: JSON.parse(app.policy_content),
+          policy_content: JSON.parse(app.policyName),
         };
       }
       return app;
@@ -447,12 +472,12 @@ export class teamAndTeamMemberService {
     console.log(parsedPolicy);
     return parsedPolicy;
   }
-  async updatePolicyById(policy_uuid: UUID, dto: trackingPolicyDTO) {
+  async updatePolicyById(policy_uuid: UUID, dto: TrackingPolicyDTO) {
     await this.policyRepository.update(policy_uuid, dto);
-    return this.policyRepository.findOne({ where: { policy_uuid } });
+    return this.policyRepository.findOne({ where: {policyId: policy_uuid } });
   }
   async deletePolicyById(policy_uuid: UUID) {
-    return await this.policyRepository.delete({ policy_uuid });
+    return await this.policyRepository.delete(policy_uuid);
   }
   //devices
   async createDevice(CreateDevicesDto: CreateDevicesDto): Promise<Devices> {

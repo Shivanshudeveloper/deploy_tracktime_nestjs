@@ -1,19 +1,65 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { User } from 'src/users/user.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToMany, ManyToOne, JoinTable, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Organization } from './organisation.entity';
+import { Team } from './team.entity';
+import { TrackingWeekdays } from './tracking_weekdays.entity';
+import { weekdays } from 'moment';
+import { TrackingHolidays } from './tracking_holidays.entity';
 
-@Entity('tracking_policy')
-export class trackingPolicyEntity {
+@Entity('policies')
+export class Policy {
   @PrimaryGeneratedColumn('uuid')
-  policy_uuid: string;
-
-  @Column('uuid')
-  organization_uid: string;
+  policyId: string;
 
   @Column()
-  policy_name: string;
+  policyName: string; // Name of the policy
 
-  @Column({ type: 'json' }) // This will store and retrieve the data as JSON
-  policy_content: any;
+  @Column('int')
+  screenshotInterval: number; // Time interval for screenshots (in minutes)
 
-  @Column('uuid')
-  team_uuid: string;
+  @ManyToOne(()=> TrackingWeekdays ,(w)=> w.trackedW_id)
+  weekdays:TrackingWeekdays[];
+
+  @ManyToOne(()=> TrackingHolidays ,(w)=> w.trackedH_id)
+  holidays:TrackingHolidays[];
+
+  // @Column({ default: false })
+  // isDefault: boolean; // Flag to indicate if this is a default policy 
+
+  @ManyToMany(() => Team, (team) => team.policies)
+  @JoinTable({
+    name: 'policy_teams', // Custom join table
+    joinColumn: { name: 'policy_id', referencedColumnName: 'policyId' },
+    inverseJoinColumn: { name: 'team_id', referencedColumnName: 'id' }
+  })
+  assignedTeams: Team[]; // Policies can be assigned to multiple teams
+
+  @ManyToMany(() => User, (user) => user.policies)
+  @JoinTable({
+    name: 'policy_users', // Custom join table
+    joinColumn: { name: 'policy_id', referencedColumnName: 'policyId' },
+    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'userUUID' }
+  })
+  assignedUsers: User[]; // Policies can be assigned to multiple users
+
+  @ManyToOne(() => Organization, (organization) => organization.policy)
+  organization: Organization; // The organization that owns the policy
+
+  // @OneToMany(()=> TrackingWeekdays, (weekdays)=>weekdays.policy )
+  // @JoinTable({
+  //   name: 'policy_weekdays', // Custom join table
+  //   joinColumn: { name: 'policy_id', referencedColumnName: 'policyId' },
+  //   inverseJoinColumn: { name: 'weekday_id', referencedColumnName: 'trackedW_id' }
+  // })
+  // weekdays : TrackingWeekdays[];
+
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
 }
+
+
+// for default data capturing use createdAt key so you don't have to worry about anmything.

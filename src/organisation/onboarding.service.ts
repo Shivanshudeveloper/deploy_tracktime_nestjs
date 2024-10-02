@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -9,7 +10,7 @@ import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
 import { Between, Repository } from 'typeorm';
 import { TrackTimeStatus, User } from 'src/users/user.entity';
-import { CreateTeamDto } from './dto/team.dto';
+import { CreateTeamDTO } from './dto/teams.dto';
 import { UserActivity } from 'src/users/user_activity.entity';
 import { DeepPartial } from 'typeorm';
 import { prototype } from 'events';
@@ -23,6 +24,9 @@ import axios from 'axios';
 import { CalculatedLogic } from './calculatedLogic.entity';
 import { AttendanceDto } from './dto/attendance.dto';
 import { CreateCalculatedLogicDto } from './dto/calculatedLogic.dto';
+import { CreateOrganizationDTO } from './dto/organization.dto';
+import { Policy } from './trackingpolicy.entity';
+import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
 const DeployFlaskBaseApi = 'https://python-link-classification-zckw.onrender.com';
 const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
@@ -33,9 +37,12 @@ export class OnboardingService {
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-07-14`; // Flask API URL
   private flaskBaseApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`;
+  private readonly logger = new Logger(OnboardingService.name);
   constructor(
     @InjectRepository(Organization)
     private organizationRepository: Repository<Organization>,
+    @InjectRepository(Policy)
+    private policyRepository: Repository<Policy>,
     @InjectRepository(DesktopApplication)
     private desktopAppRepository: Repository<DesktopApplication>,
     @InjectRepository(Team)
@@ -61,7 +68,33 @@ export class OnboardingService {
       region: this.ConfigureService.get<string>('WASABI_REGION'),
     });
   }
-
+  async getOrganizationDetails(id:string):Promise<Organization> {
+    console.log("id", id);
+    if(id){
+      let organization = await this.organizationRepository.findOne({where :{id}});
+      console.log("organization",organization);
+      return organization;
+    }
+    return null;
+  }
+  async updateOrganization(Organization:Organization,data:CreateOrganizationDTO):Promise<string>{
+    console.log(data)
+      try {
+      const orga =await this.organizationRepository.findOne({where:{id:Organization?.id}});
+      if(orga?.id){
+        data?.country && (orga.country = data.country);
+        data?.timeZone && (orga.timeZone = data.timeZone);
+        data?.name && (orga.name = data.name);
+        data?.logo && (orga.logo = data.logo);
+        await this.organizationRepository.save(orga);
+        return orga.id;
+    }
+      return null;
+    } catch (error) {
+      console.log({error:error.message});
+      return null;
+  }
+  }
   async fetchScreenShot(): Promise<any[]> {
     // const bucketName = process.env.WASABI_BUCKET_NAME;
     const bucketName = this.ConfigureService.get<string>('WASABI_BUCKET_NAME');
@@ -89,7 +122,7 @@ export class OnboardingService {
     }
   }
 
-  async createOrganization(data: any): Promise<Organization> {
+  async createOrganization(data: CreateOrganizationDTO): Promise<Organization> {
     // const organization = this.organizationRepository.create({
     //   name: data.name,
     //   logo: data.logo || null, // Assuming logo can be null
@@ -103,7 +136,7 @@ export class OnboardingService {
     organisation.logo = data.logo;
     organisation.teamSize = data.teamSize;
     organisation.type = data.type;
-
+    organisation.timeZone = data.timeZone || null;
     const savedOrganization =
       await this.organizationRepository.save(organisation);
     console.log('Saved Organization:', savedOrganization);
@@ -137,7 +170,7 @@ export class OnboardingService {
     return isOrganization;
   }
 
-  async createTeam(createTeamDto: CreateTeamDto): Promise<Team> {
+  async createTeam(createTeamDto: CreateTeamDTO): Promise<Team> {
     console.log('createTeamDto:', createTeamDto);
 
     // Check if a team with the same name already exists
@@ -204,7 +237,7 @@ export class OnboardingService {
   }
   async findAllUsers(Id: string): Promise<User[]> {
     return await this.userRepository.find({ where: { organizationId: Id } });
-  }
+  } 
 
   async findUserById(Id: string): Promise<User> {
     return await this.userRepository.findOne({ where: { userUUID: Id } });
@@ -485,95 +518,80 @@ export class OnboardingService {
     device_user_name: string,
   ): Promise<string> {
     try {
-      let isExist = await this.devicesRepository.findOne({
-        where: { device_uid: device_id },
-        // where : {user_name:device_user_name}
+      // Find the device with the given device UID or mac_address in a single query to optimize DB hits
+      let existingDevice = await this.devicesRepository.findOne({
+        where: [{ device_uid: device_id }, { mac_address: mac_address }],
       });
-      console.log('isExist before mac_address', isExist);
 
-      if (!isExist?.mac_address && mac_address && isExist?.user_uid) {
-        // Update the mac_address of the new device_id
-        const deviceToUpdate = await this.devicesRepository.findOne({
-          where: { device_uid: device_id },
-        });
-
-        let deviceMac = await this.devicesRepository.findOne({
+      // If no device is found with device_id, update mac_address if required
+      if (existingDevice && !existingDevice.mac_address && mac_address) {
+        const conflictingDevice = await this.devicesRepository.findOne({
           where: { mac_address: mac_address },
         });
 
-        if (deviceMac.device_uid) {
-          deviceMac.mac_address = null;
-          await this.devicesRepository.save(deviceMac);
+        // Remove conflicting mac_address if found
+        if (conflictingDevice) {
+          conflictingDevice.mac_address = null;
+          await this.devicesRepository.save(conflictingDevice);
         }
 
-        if (deviceToUpdate) {
-          deviceToUpdate.mac_address = mac_address;
-          await this.devicesRepository.save(deviceToUpdate);
-        }
+        existingDevice.mac_address = mac_address;
+        await this.devicesRepository.save(existingDevice);
 
-        return deviceToUpdate?.device_uid;
-      } else if (isExist?.mac_address) {
-        isExist = await this.devicesRepository.findOne({
-          where: { mac_address: mac_address },
-        });
+        return existingDevice.device_uid;
       }
 
-      console.log(isExist);
-
-      // if (
-      //   isExist?.user_name &&
-      //   isExist?.user_name.toLowerCase() === device_user_name.toLowerCase()
-      // ) {
-      //   return isExist?.device_uid;
-      // }
-      // console.log(
-      //   isExist?.user_name,
-      //   device_user_name,
-      //   isExist?.user_name == device_user_name,
-      // );
-
-      return isExist?.device_uid;
-    } catch (err) {
-      console.log(err?.message);
-      return null;
+      return existingDevice ? existingDevice.device_uid : null;
+    } catch (error) {
+      this.logger.error(`Error checking device ID: ${error.message}`, error.stack);
+      throw error;
     }
   }
 
   async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
     try {
-      // Logic to fetch user details from your database or storage based on user ID
-      const user = await this.devicesRepository.findOne({
-        where: { device_uid: deviceId },
-      });
-
-      if (!user?.device_uid) {
-        return {
-          tracktimeStatus: 'Resume',
-          isPaid: false,
-        };
+      // Log the input parameters for debugging
+      this.logger.debug(`Fetching user config for device: ${deviceId}, organization: ${organizationId}`);
+  
+      // Validate that deviceId and organizationId are not null or empty
+      if (!deviceId || !organizationId) {
+        this.logger.error(`Invalid input: deviceId or organizationId is missing.`);
+        throw new Error('Invalid input: deviceId or organizationId is missing.');
       }
-
-      // Assuming your User entity has a 'config' field
-      // const { config } = user;
-
-      // const configUser = await this.devicesRepository.findOne({
-      //   where: { device_uid: user?.user_uid },
-      // });
-      const isPaid = await this.SubscriptionRepository.findOne({
-        where: { organization_id: organizationId },
+  
+      // Fetch the user config from the database
+      let userConfig = await this.devicesRepository.findOne({
+        where: { device_uid: deviceId, organization_uid: organizationId },
       });
-      // Return the user's configuration and track time status or modify as needed
-
-      console.log('user', user);
-      // console.log('configUser', configUser);
-      return {
-        trackTimeStatus: user?.config.trackTimeStatus || 'Resume',
-        isPaid: isPaid ? true : false,
-      };
+  
+      if (!userConfig) {
+        this.logger.warn(`User config not found for device ${deviceId} and organization ${organizationId}`);
+        throw new Error(`User config not found for device ${deviceId} and organization ${organizationId}`);
+      }
+  
+      // Check if the config is null and update it with default value if necessary
+      if (!userConfig.config) {
+        this.logger.log(`User config is null. Setting default config: { trackTimeStatus: 'Resume' } for device: ${deviceId}`);
+  
+        // Update the config field
+        userConfig.config = { trackTimeStatus: TrackTimeStatus.Resume };
+        
+        // Save the updated user config back to the database
+        await this.devicesRepository.save(userConfig);
+        
+        this.logger.log(`Default config set successfully for device: ${deviceId}`);
+      }
+  
+      this.logger.debug(`User config fetched successfully: ${JSON.stringify(userConfig)}`);
+      return userConfig;
     } catch (error) {
-      throw new Error('Failed to fetch user config');
+      // Log the error with details to identify the cause
+      this.logger.error(`Failed to fetch or update user config: ${error.message}`, error.stack);
+      throw new Error(`Failed to fetch or update user config: ${error.message}`);
     }
   }
+  
+  
 
   async findDesktopApplication(orgId: string): Promise<any> {
     try {
@@ -847,4 +865,84 @@ export class OnboardingService {
   async getCalculatedLogicByOrganization(organizationId: string): Promise<CalculatedLogic> {
     return this.calculatedLogicRepository.findOne({ where: { organization_id :organizationId} });
   }
+
+    // Create a new policy
+    async createPolicy(createPolicyDto: TrackingPolicyDTO): Promise<Policy> {
+      const { organizationId, policyName, screenshotInterval, teamId } = createPolicyDto;
+      console.log(organizationId, policyName, screenshotInterval, teamId);
+      const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+      if (!organization) {
+        throw new NotFoundException(`Organization with ID ${organizationId} not found`);
+      }
+   
+      const team = await this.teamRepository.findOne({ where: { id: teamId } });
+      if (!team) {
+        throw new NotFoundException(`Team with ID ${teamId} not found`);
+      }
+      console.log(team);
+      const policy = this.policyRepository.create({
+        policyName,
+        screenshotInterval,
+        // isDefault,
+        organization,
+        assignedTeams: [team],
+        // policyContent,
+      });
+  
+      await this.policyRepository.save(policy);
+      return policy;
+    }
+  
+    // Update a policy
+    async updatePolicy(id: string, updatePolicyDto: TrackingPolicyDTO): Promise<Policy> {
+      const policy = await this.policyRepository.findOne({ where: { policyId: id } });
+      if (!policy) {
+        throw new NotFoundException(`Policy with ID ${id} not found`);
+      }
+  
+      const { policyName, screenshotInterval } = updatePolicyDto;
+      
+      policy.policyName = policyName ?? policy.policyName;
+      policy.screenshotInterval = screenshotInterval ?? policy.screenshotInterval;
+      // policy.isDefault = isDefault ?? policy.isDefault;
+      // policy.policyContent = policyContent ?? policy.policyContent;
+  
+      await this.policyRepository.save(policy);
+      return policy;
+    }
+  
+    // Fetch all policies for an organization
+    async getPoliciesForOrganization(organizationId: string): Promise<Policy[]> {
+      const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+      if (!organization) {
+        throw new NotFoundException(`Organization with ID ${organizationId} not found`);
+      }
+  
+      return await this.policyRepository.find({
+        where: { organization: organization },
+        relations: ['assignedTeams', 'assignedUsers'],
+      });
+    }
+  
+    // Fetch a single policy
+    async getPolicyById(policyId: string): Promise<Policy> {
+      const policy = await this.policyRepository.findOne({
+        where: { policyId },
+        relations: ['assignedTeams', 'assignedUsers'],
+      });
+  
+      if (!policy) {
+        throw new NotFoundException(`Policy with ID ${policyId} not found`);
+      }
+  
+      return policy;
+    }
+
+    async finalResponseData(userConfig:TrackTimeStatus,device:string,organizationId:string){
+      let isPaidStatus = await this.SubscriptionRepository.findOne({where: {organization_id:organizationId}})
+      if(!isPaidStatus?.organization_id){
+        return false;
+      }
+      return true;
+    }
 }

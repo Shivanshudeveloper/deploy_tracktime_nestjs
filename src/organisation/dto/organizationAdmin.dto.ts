@@ -19,5 +19,6 @@ export class CreateOrganizationAdminDto {
 
   @IsOptional()
   @IsString()
-  OrganizationId:string;
+  OrganizationId:string; 
+
 }

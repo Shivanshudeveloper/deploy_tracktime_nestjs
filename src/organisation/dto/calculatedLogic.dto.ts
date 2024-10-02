@@ -1,4 +1,4 @@
-import { IsDecimal, IsNumber } from 'class-validator';
+import { IsDecimal, IsNotEmpty, IsNumber, IsString } from 'class-validator';
 
 export class CreateCalculatedLogicDto {
   @IsNumber()
@@ -12,5 +12,7 @@ export class CreateCalculatedLogicDto {
 
   @IsNumber()
   halfDayCoreProductiveTime: number;
+  
+
 }
 

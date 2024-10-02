@@ -8,4 +8,7 @@ export class LoginAdminOrganization {
   @IsNotEmpty()
   @IsString()
   password: string;
+
+
+
 }

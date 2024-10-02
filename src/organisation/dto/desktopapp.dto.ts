@@ -1,4 +1,4 @@
-import { IsUUID, IsJSON } from 'class-validator';
+import { IsUUID, IsJSON, IsNotEmpty, IsString } from 'class-validator';
 
 export class DesktopAppDTO {
   @IsUUID()
@@ -15,4 +15,5 @@ export class DesktopAppDTO {
 
   @IsUUID()
   policy_uuid: string;
+
 }

@@ -20,10 +20,10 @@ export class CalculatedLogic {
   @Column('decimal')
   half_day_core_productive_time: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({name:"created_at"})
   created_at: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({name:"updated_at"})
   updated_at: Date;
 }
 

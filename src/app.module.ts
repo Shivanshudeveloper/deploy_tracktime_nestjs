@@ -21,19 +21,18 @@ import { Team } from './organisation/team.entity';
 import { OnboardingService } from './organisation/onboarding.service';
 import { OnboardingController } from './organisation/onboarding.controller';
 import { UserActivity } from './users/user_activity.entity';
-import { Teams } from './organisation/teams.entity';
+// import { Teams } from './organisation/teams.entity';
 import { TeamMember } from './organisation/teammembers.entity';
 import { TeamAndTeamMemberController } from './organisation/teams.controller';
 import { teamAndTeamMemberService } from './organisation/teams.service';
-import { RegisteredUser } from './organisation/registeredusers.entity';
 import { Subscription } from './organisation/subscription.entity';
 import { EmailReportSettings } from './organisation/emailreportsetting.entity';
 import { Category } from './organisation/category.entity';
 import { UniqueApps } from './organisation/uniqueapps.entity';
 import { DesktopAppEntity } from './organisation/desktopapp.entity';
 import { applcationEntity } from './organisation/application.entity';
-import { productivitySettingEntity } from './organisation/prodsetting.entity';
-import { trackingPolicyEntity } from './organisation/trackingpolicy.entity';
+import { ProductivitySettingEntity } from './organisation/prodsetting.entity';
+import { Policy } from './organisation/trackingpolicy.entity';
 import { Devices } from './organisation/devices.entity';
 import { ConfigService } from '@nestjs/config';
 import { organizationAdminService } from './organisation/OrganizationAdmin.service';
@@ -41,6 +40,11 @@ import { OrganizationAdminController } from './organisation/OrgnaizationRegister
 import { CreateOrganizationAdmin } from './organisation/OrganizationAdmin.entity';
 import { OnbaordingAuthMiddleware } from './middleware/OnboardingAuth.middleware'; 
 import { CalculatedLogic } from './organisation/calculatedLogic.entity';
+import { TrackingWeekdays } from './organisation/tracking_weekdays.entity';
+import { TrackingHolidays } from './organisation/tracking_holidays.entity';
+import { ScreenshotSettings } from './organisation/screenshot_settings.entity';
+import { PolicyTeams } from './organisation/policy_team.entity';
+import { PolicyUsers } from './organisation/policy_user.entity';
 
 
 @Module({
@@ -53,20 +57,25 @@ import { CalculatedLogic } from './organisation/calculatedLogic.entity';
       DesktopApplication,
       Team, 
       UserActivity,
-      Teams,
+      // Teams, 
       TeamMember,
-      RegisteredUser,
-      Subscription,
+      Subscription, 
       EmailReportSettings,
       Category,
       UniqueApps,
       DesktopAppEntity,
       applcationEntity,
-      productivitySettingEntity,
-      trackingPolicyEntity,
+      ProductivitySettingEntity,
+      Policy,
       Devices,
       CreateOrganizationAdmin,
       CalculatedLogic,
+      TrackingWeekdays,
+      TrackingHolidays, 
+      ScreenshotSettings,
+      PolicyTeams,
+      PolicyUsers,
+
     ]),
 
     JwtModule.register({

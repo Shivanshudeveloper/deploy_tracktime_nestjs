@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -27,4 +28,7 @@ export class registeredUsersDto {
 
   @IsBoolean()
   account_status: boolean;
+
+
 }
+ 

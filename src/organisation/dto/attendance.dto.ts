@@ -1,3 +1,5 @@
+import { IsNotEmpty, IsString } from "class-validator";
+
 class RecordOfWeek {
     Date: string;
     DateStatus: string;

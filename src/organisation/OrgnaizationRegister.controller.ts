@@ -42,7 +42,7 @@ export class OrganizationAdminController {
     @Body() createOrganizationDto: CreateOrganizationAdminDto,
     @Res() res: Response,
   ): Promise<any> {
-    // console.log('data', createOrganizationDto);
+    console.log('data', createOrganizationDto);
     let organizationAdmin = await this.organizationAdminService.validateOrganizationAdmin(
         createOrganizationDto?.email,
       );
@@ -67,7 +67,7 @@ export class OrganizationAdminController {
 
 
 
-  @Post("/organization/u/validateToken")
+@Post("/organization/u/validateToken")
 async validateToken(
   @Body() Token: tokenDto,
   @Res() res: Response

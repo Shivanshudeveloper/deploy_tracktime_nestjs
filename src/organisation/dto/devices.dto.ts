@@ -12,4 +12,6 @@ export class CreateDevicesDto {
   // @IsNotEmpty()
   @IsUUID()
   user_uid: string;
+
+
 }

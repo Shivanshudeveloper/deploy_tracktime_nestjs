@@ -1,4 +1,4 @@
-import { IsUUID, IsString } from 'class-validator';
+import { IsUUID, IsString, IsNotEmpty } from 'class-validator';
 
 export class applicationDTO {
   @IsString()
@@ -12,4 +12,5 @@ export class applicationDTO {
 
   @IsUUID()
   policy_uuid: string;
+
 }

@@ -1,10 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, ManyToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { IsNotEmpty, IsEmail, IsObject, ValidateNested, IsEnum, isEnum } from 'class-validator';
 import { Organization } from '../organisation/organisation.entity';
 import { Team } from 'src/organisation/team.entity';
 import { UserActivity } from './user_activity.entity';
 import { Devices } from 'src/organisation/devices.entity';
 import { Type } from 'class-transformer';
+import { Policy } from 'src/organisation/trackingpolicy.entity';
 
 
 export enum TrackTimeStatus {
@@ -50,4 +51,14 @@ export class User {
 
   @OneToMany(() => Devices, DevicesCaptured => DevicesCaptured.user_uid )
   userActivities: UserActivity[];
-}
+
+  @ManyToMany(() => Policy, (policy) => policy.policyId)
+  policies: Policy[];
+
+  @CreateDateColumn()
+  created_at: Date;
+
+  @UpdateDateColumn()
+  updated_at: Date;
+  
+} 

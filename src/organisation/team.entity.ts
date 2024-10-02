@@ -4,9 +4,13 @@ import {
   Column,
   OneToMany,
   ManyToOne,
+  ManyToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Organization } from './organisation.entity';
 import { User } from 'src/users/user.entity';
+import { Policy } from './trackingpolicy.entity';
 
 @Entity("team")
 export class Team {
@@ -30,6 +34,16 @@ export class Team {
  
   @OneToMany(() => User, (teamMember) => teamMember.teamId)
   teamMembers: User[];
+
+  @CreateDateColumn({name:"created_at"})
+  created_at: Date;
+
+  @UpdateDateColumn({name:"updated_at"})
+  updated_at: Date;
+
+  @ManyToMany(() => Policy, (policy) => policy.policyId)
+  policies: Policy[];
+
 }
 
 // New format data follow this

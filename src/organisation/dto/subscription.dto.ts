@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class SubscriptionDto {
   @IsUUID()
@@ -15,4 +15,6 @@ export class SubscriptionDto {
 
   @IsOptional()
   invoice_date: string;
+  
+
 }
