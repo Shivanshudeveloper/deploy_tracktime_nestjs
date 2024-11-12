@@ -1,5 +1,5 @@
-import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
-import { Policy } from "./trackingpolicy.entity";
+import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn, JoinColumn } from 'typeorm';
+import { Policy } from './trackingpolicy.entity';
 
 @Entity('tracking_holidays')
 export class TrackingHolidays {
@@ -15,19 +15,13 @@ export class TrackingHolidays {
   @Column({ default: true })
   day_status: boolean;
 
-  @ManyToOne(() => Policy, (policy) => policy.policyId)
+  @ManyToOne(() => Policy, (policy) => policy.holidays)
+  @JoinColumn({ name: 'policyId' }) // Specify the custom column name for policy relationship
   policy: Policy;
 
-  // Use default camelCase format
-  // @CreateDateColumn()
-  // createdAt: Date;
-
-  // @UpdateDateColumn()
-  // updatedAt: Date;
-
-  @CreateDateColumn({name:"created_at"})
+  @CreateDateColumn({ name: 'created_at' })
   created_at: Date;
 
-  @UpdateDateColumn({name:"updated_at"})
+  @UpdateDateColumn({ name: 'updated_at' })
   updated_at: Date;
 }

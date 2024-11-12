@@ -1,10 +1,21 @@
-import { User } from 'src/users/user.entity';
-import { Entity, PrimaryGeneratedColumn, Column, ManyToMany, ManyToOne, JoinTable, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  ManyToMany,
+  OneToMany,
+  JoinTable,
+  CreateDateColumn,
+  UpdateDateColumn,
+  JoinColumn,
+} from 'typeorm';
 import { Organization } from './organisation.entity';
-import { Team } from './team.entity';
 import { TrackingWeekdays } from './tracking_weekdays.entity';
-import { weekdays } from 'moment';
 import { TrackingHolidays } from './tracking_holidays.entity';
+import { ScreenshotSettings } from './screenshot_settings.entity';
+import { PolicyTeams } from './policy_team.entity';
+import { PolicyUsers } from './policy_user.entity';
 
 @Entity('policies')
 export class Policy {
@@ -12,54 +23,35 @@ export class Policy {
   policyId: string;
 
   @Column()
-  policyName: string; // Name of the policy
+  policyName: string;
 
   @Column('int')
-  screenshotInterval: number; // Time interval for screenshots (in minutes)
+  screenshotInterval: number;
 
-  @ManyToOne(()=> TrackingWeekdays ,(w)=> w.trackedW_id)
-  weekdays:TrackingWeekdays[];
+  @OneToMany(() => ScreenshotSettings, (screenshotSett) => screenshotSett.policy, { cascade: true, onDelete: 'CASCADE' })
+  ScreenshotSettings: ScreenshotSettings;
 
-  @ManyToOne(()=> TrackingHolidays ,(w)=> w.trackedH_id)
-  holidays:TrackingHolidays[];
+  @OneToMany(() => TrackingWeekdays, (weekdays) => weekdays.policy, { cascade: true, onDelete: 'CASCADE' })
+  weekdays: TrackingWeekdays[];
 
-  // @Column({ default: false })
-  // isDefault: boolean; // Flag to indicate if this is a default policy 
+  @OneToMany(() => TrackingHolidays, (holidays) => holidays.policy, { cascade: true, onDelete: 'CASCADE' })
+  holidays: TrackingHolidays[];
 
-  @ManyToMany(() => Team, (team) => team.policies)
-  @JoinTable({
-    name: 'policy_teams', // Custom join table
-    joinColumn: { name: 'policy_id', referencedColumnName: 'policyId' },
-    inverseJoinColumn: { name: 'team_id', referencedColumnName: 'id' }
-  })
-  assignedTeams: Team[]; // Policies can be assigned to multiple teams
+  @ManyToOne(() => Organization, (organization) => organization.policy, { cascade: true, eager: true })
+  @JoinColumn({ name: 'organizationId' })
+  organization: Organization;
 
-  @ManyToMany(() => User, (user) => user.policies)
-  @JoinTable({
-    name: 'policy_users', // Custom join table
-    joinColumn: { name: 'policy_id', referencedColumnName: 'policyId' },
-    inverseJoinColumn: { name: 'user_id', referencedColumnName: 'userUUID' }
-  })
-  assignedUsers: User[]; // Policies can be assigned to multiple users
+  // One-to-Many with PolicyTeams (each policy can have multiple associated teams)
+  @OneToMany(() => PolicyTeams, (policyTeams) => policyTeams.policy, { cascade: true, onDelete: 'CASCADE' })
+  assignedTeams: PolicyTeams[];
 
-  @ManyToOne(() => Organization, (organization) => organization.policy)
-  organization: Organization; // The organization that owns the policy
+  // One-to-Many with PolicyUsers (each policy can have multiple associated users)
+  @OneToMany(() => PolicyUsers, (policyUsers) => policyUsers.policy, { cascade: true, onDelete: 'CASCADE' })
+  assignedUsers: PolicyUsers[];
 
-  // @OneToMany(()=> TrackingWeekdays, (weekdays)=>weekdays.policy )
-  // @JoinTable({
-  //   name: 'policy_weekdays', // Custom join table
-  //   joinColumn: { name: 'policy_id', referencedColumnName: 'policyId' },
-  //   inverseJoinColumn: { name: 'weekday_id', referencedColumnName: 'trackedW_id' }
-  // })
-  // weekdays : TrackingWeekdays[];
-
-
-  @CreateDateColumn({name:"created_at"})
+  @CreateDateColumn({ name: 'created_at' })
   created_at: Date;
 
-  @UpdateDateColumn({name:"updated_at"})
+  @UpdateDateColumn({ name: 'updated_at' })
   updated_at: Date;
 }
-
-
-// for default data capturing use createdAt key so you don't have to worry about anmything.

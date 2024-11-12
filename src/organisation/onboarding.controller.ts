@@ -1,11 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpException,
   HttpStatus,
   Logger,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -891,7 +893,7 @@ export class OnboardingController {
     try {
       // Step 1: Validate Organization
       const organizationExists = await this.onboardingService.validateOrganization(organizationId);
-      if (!organizationExists) {
+      if (!organizationExists) { 
         this.logger.warn(`Organization with ID ${organizationId} does not exist.`);
         throw new HttpException('Organization with provided ID does not exist', HttpStatus.NOT_FOUND);
       }
@@ -919,9 +921,13 @@ export class OnboardingController {
       
       // step 5: getting Paid status for the organization.
       const isPaidStatus = await this.onboardingService.finalResponseData(userConfig,deviceIdOrNew,organizationId)
+      const timeForUnPaidUsers = await this.onboardingService.findTimeForPaidUsers(deviceIdOrNew)
+      const blurStatus = await this.onboardingService.findBlurScreenshotStatus(deviceIdOrNew);
 
       const finalData = {
         device_id:deviceIdOrNew,
+        timeForUnpaidUser:timeForUnPaidUsers || 2,
+        blurstatus:blurStatus || false,
         config:{
           "trackTimeStatus":userConfig?.config?.trackTimeStatus,
           isPaid:isPaidStatus,
@@ -1017,6 +1023,23 @@ export class OnboardingController {
     }
   }
 
+  @Delete("/policy/delete/:policy_id")
+  async deletePolicy(
+    @Res() res: Response,
+    @Req() req: Request,
+    @Param("policy_id") policyId: string
+  ): Promise<Response> {
+
+    // Step 2: Delete related Screenshot Settings, Weekdays, Holidays, and other related entities
+    // You can use cascading delete here if your entities are set up with cascade: true on relations
+    // If cascade delete is not enabled, manually delete related records as follows:
+    await this.onboardingService.deletePolicy(policyId);
+  
+    // Step 4: Return success response
+    return res.status(HttpStatus.OK).json({
+      message: "Policy deleted successfully along with all related data."
+    });
+  }
 
   @Patch('/api/updateOrganizationSettings')
   @UseInterceptors(
@@ -1133,31 +1156,70 @@ export class OnboardingController {
    }
  
    // Route to get all policies for an organization
-   @Get('organization/:organizationId/policies')
+   @Get('organization/policies')
    async getPoliciesForOrganization(
-     @Param('organizationId') organizationId: string,
+    //  @Param('organizationId') organizationId: string,
      @Res() res,
      @Req() req,
    ) {
      try {
-       const token = req?.headers['authorization'];
-       if (!token) {
-         return res.status(404).json({ error: 'Token is missing!' });
-       }
- 
-       const validToken = await this.organizationAdminService.IsValidateToken(token.split(' ')[1]);
-       if (!validToken) {
-         return res.status(401).json({ error: 'Invalid User!' });
-       }
- 
-       const policies = await this.onboardingService.getPoliciesForOrganization(organizationId);
-       return res.status(200).json({ policies });
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+  
+      const organization = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+  
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+      console.log("organization on policy page",organization);
+       const policies = await this.onboardingService.getPoliciesForOrganization(organization);
+
+       const getOtherDetailsForPolicy = await this.onboardingService.getDetailsForPolicy(policies);
+       
+       console.log("Policies",getOtherDetailsForPolicy)
+       return res.status(200).json({ getOtherDetailsForPolicy });
      } catch (error) {
        console.log(error);
        return res.status(500).json({ message: 'Failed to fetch policies!', error: error?.message });
      }
    }
+
  
+
+   @Post("organization/duplicatePolicy")
+   async duplicatePolicy(
+    @Body() Body,
+    @Res() res,
+    @Req() req,
+  ) {
+    try {
+     const organizationAdminId = req.headers['organizationAdminId'];
+     const organizationAdminIdString = Array.isArray(organizationAdminId)
+       ? organizationAdminId[0]
+       : organizationAdminId;
+ 
+     const organization = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+ 
+     if (!organization) {
+       return res.status(404).json({ error: 'Organization not found !!' });
+     }
+     console.log(organization);
+
+    //  createPolicyDto["organizationId"] = organization;
+
+      let {policyId,teamId,name} = Body;
+      const newPolicy = await this.onboardingService.duplicatePolicy(policyId,name,teamId);
+      
+      return res.status(201).json({ message: 'Policy created successfully!', policy: newPolicy });
+
+    } catch (error) {
+      console.log(error);
+      return res.status(500).json({ message: 'Failed to create policy!', error: error?.message });
+    }
+  }
+
    // Route to get a single policy by ID
    @Get('policy/:id')
    async getPolicyById(@Param('id') policyId: string, @Res() res) {
@@ -1168,4 +1230,58 @@ export class OnboardingController {
        return res.status(500).json({ message: 'Failed to fetch policy!', error: error?.message });
      }
    }
+
+   // Route to get a single policy by ID
+   @Get('policy/t&u/:id')
+   async getPolicyTeamAndUser(@Param('id') policyId: string, @Res() res) {
+     try {
+      console.log("Id",policyId)
+       const policy = await this.onboardingService.getPolicyTeamAndUser(policyId);
+      //  if(policy) {
+
+      //  }
+      const teams = await this.onboardingService.getAllTeam(policy?.organization?.id);
+      const users = await this.onboardingService.getAllusers(policy?.organization?.id);
+
+      // const combineData = teams.map(async team=>{
+      //   team['teamMembers'] = [];
+      //   const teamMember =  
+      // })
+       return res.status(200).json({ policy,teams,users });
+     } catch (error) {
+       return res.status(500).json({ message: 'Failed to fetch policy!', error: error?.message });
+     }
+   }
+
+   // Route to get a single policy by ID
+   @Patch('policy/assignedPolicy/:id')
+   async assignedPolicy(@Param('id') policyId: string, @Res() res, @Body() body) {
+    
+     try {
+      console.log("Id",policyId)
+      const {teamId,userId} = body;
+      console.log(teamId,userId,body); 
+
+       const policy = await this.onboardingService.updatePolicyUserAndTeam(policyId,teamId,userId);
+       
+       return res.status(200).json({ policy });
+     } catch (error) {
+       return res.status(500).json({ message: 'Failed to fetch policy!', error: error?.message });
+     }
+   }
+
+   @Patch('policy/screenShotSettingsUpdate/:id')
+   async updateScreenshot(@Param('id') policyId: string, @Res() res, @Body() body) {
+    
+     try {
+      console.log("Id",policyId)
+      const {blurScreenshotsStatus,time_interval,screenshot_monitoring,screenshot_id} = body;
+       const screenshotSettings = await this.onboardingService.updateScreenShotSettings(policyId,screenshot_id,blurScreenshotsStatus,time_interval,screenshot_monitoring);
+       return res.status(200).json({ screenshotSettings });
+     } catch (error) {
+       return res.status(500).json({ message: 'Failed to update screenshot!', error: error?.message });
+     }
+   }
+   
+
 }

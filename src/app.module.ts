@@ -85,7 +85,7 @@ import { PolicyUsers } from './organisation/policy_user.entity';
   ],
   controllers: [
     UserController,
-    ProfileController,
+    ProfileController, 
     OnboardingController,
     TeamAndTeamMemberController,
     OrganizationAdminController,
