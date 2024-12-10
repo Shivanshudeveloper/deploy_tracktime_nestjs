@@ -20,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const { email,id } = payload; // Extract email and password from payload or however it's stored
     const user = await this.authService.validateUserById(payload.sub);
     console.log(user)
-    if (!user) {
+    if (!user) { 
       throw new UnauthorizedException();
     }
     return user;

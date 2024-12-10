@@ -13,6 +13,5 @@ export class CreateCalculatedLogicDto {
   @IsNumber()
   halfDayCoreProductiveTime: number;
   
-
 }
 

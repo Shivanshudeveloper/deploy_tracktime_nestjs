@@ -100,6 +100,15 @@ export class organizationAdminService {
     }
     return null;
   }
+  async findOrganization(id:string):Promise<CreateOrganizationAdmin> {
+    console.log("id", id);
+    if(id){
+      let organization = await this.organizationAdminRepository.findOne({where :{OrganizationId:id}});
+      console.log("organization",organization);
+      return organization;
+    }
+    return null;
+  }
   async findUserAdminById(id:string):Promise<Boolean>{
     if(!id){
       return false;

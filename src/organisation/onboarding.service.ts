@@ -1,3 +1,4 @@
+
 import {
   BadRequestException,
   Injectable,
@@ -8,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
-import { Between, Repository } from 'typeorm';
+import { Between, IsNull, Not, Repository } from 'typeorm';
 import { TrackTimeStatus, User } from 'src/users/user.entity';
 import { CreateTeamDTO } from './dto/teams.dto';
 import { UserActivity } from 'src/users/user_activity.entity';
@@ -33,6 +34,7 @@ import { ScreenshotSettings } from './screenshot_settings.entity';
 import { TrackingHolidays } from './tracking_holidays.entity';
 import { TrackingWeekdays } from './tracking_weekdays.entity';
 import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
+import { organizationAdminService } from './OrganizationAdmin.service';
 
 export const holidayList = [
   // Indian Holidays
@@ -131,7 +133,7 @@ const weekdayData = [
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
 const DeployFlaskBaseApi =
-  'https://python-link-classification-zckw.onrender.com';
+  'https://python-link-classification-1-ls93.onrender.com';
 
 const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
@@ -173,6 +175,7 @@ export class OnboardingService {
     private TrackWeedaysRepository: Repository<TrackingWeekdays>,
     @InjectRepository(CalculatedLogic)
     private calculatedLogicRepository: Repository<CalculatedLogic>,
+    private readonly organizationAdminService: organizationAdminService,
   ) {
     this.s3 = new S3({
       endpoint: this.ConfigureService.get<string>('WASABI_ENDPOINT'),
@@ -193,6 +196,28 @@ export class OnboardingService {
       return organization;
     }
     return null;
+  }
+
+  async createCalculatedLogicForNewOrganization(organizationId:string):Promise<boolean>{
+    if(!organizationId){
+      return false;
+    }
+    const calculatedLogic = this.calculatedLogicRepository.create({
+      organization_id: organizationId,
+      full_day_active_time: 8,
+      full_day_core_productive_time: 4,
+      half_day_active_time: 4,
+      half_day_core_productive_time: 2,
+    });
+    await this.calculatedLogicRepository.save(calculatedLogic);
+
+    return true;
+
+  }
+  async getDeskTopName(organization:string):Promise<string> {
+    const appName = await this.desktopAppRepository.findOne({where:{organizationId:organization}});
+    console.log(appName);
+    return appName.name || "trackTime"
   }
   async updateOrganization(
     Organization: Organization,
@@ -292,6 +317,11 @@ export class OnboardingService {
     let isOrganization = await this.organizationRepository.findOne({
       where: { name },
     });
+    // if(isOrganization) {
+    //   // isOrganization = await this.organizationAdminService.findOrganization(isOrganization.id)
+    //   // return isOrganization.id;
+    // }
+
 
     return isOrganization;
   }
@@ -574,6 +604,7 @@ export class OnboardingService {
       user_uid: user_uid ? user_uid : null,
       mac_address: mac_address ? mac_address : null,
       device_name: deviceName,
+      config:{trackTimeStatus:TrackTimeStatus.Resume},
     });
 
     // Save the new device to the database
@@ -696,16 +727,18 @@ export class OnboardingService {
 
       // Fetch the user config from the database
       let userConfig = await this.devicesRepository.findOne({
-        where: { device_uid: deviceId, organization_uid: organizationId },
+        where: { device_uid: deviceId}
       });
-
+      this.logger.log(
+        `device_config: ${userConfig}`
+      )
       if (!userConfig) {
         this.logger.warn(
           `User config not found for device ${deviceId} and organization ${organizationId}`,
         );
-        throw new Error(
-          `User config not found for device ${deviceId} and organization ${organizationId}`,
-        );
+        // throw new Error(
+        //   `User config not found for device ${deviceId} and organization ${organizationId}`,
+        // );
       }
 
       // Check if the config is null and update it with default value if necessary
@@ -1054,74 +1087,69 @@ export class OnboardingService {
 
   async createPolicy(createPolicyDto: TrackingPolicyDTO): Promise<Policy> {
     const { organizationId, policyName, screenshotInterval, teamId } = createPolicyDto;
-
-    // Step 1: Find the organization
-    const organization = await this.organizationRepository.findOne({
-      where: { id: organizationId },
-    });
-    if (!organization) {
-      throw new NotFoundException(`Organization with ID ${organizationId} not found`);
-    }
-
-    // Step 2: Find the team
-    const team = await this.teamRepository.findOne({ where: { id: teamId }});
-    if (!team) {
-      throw new NotFoundException(`Team with ID ${teamId} not found`);
-    }
-
-    // Step 3: Create and save the new policy
-    const policy = this.policyRepository.create({
-      policyName,
-      screenshotInterval,
-      organization,
-      assignedTeams: [team],
-      // assignedUsers:[]
-    });
-    await this.policyRepository.save(policy);
-
-    // Step 4: Save policy-team relationship
-    const policyTeam = this.PolicyTeamRepository.create({
-      policy: policy,
-      team: team,
-    });
-    await this.PolicyTeamRepository.save(policyTeam);
-
-    // Step 5: Fetch and associate all users from the specified team
-    const AssignUsers = await this.userRepository.find({where:{teamId:team?.id}});
-    if(!AssignUsers.length) {
-        throw new NotFoundException(`Assigned users from team ${teamId} not found`);
-    }
-    const policyUserEntries = AssignUsers.map((user) =>
-      this.PolicyUserRepository.create({
-        policy: policy,
-        user: user,
+  
+    try {
+      // Step 1: Validate and fetch related entities
+      const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+      if (!organization) {
+        throw new NotFoundException(`Organization with ID ${organizationId} not found`);
+      }
+  
+      const team = await this.teamRepository.findOne({ where: { id: teamId } });
+      if (!team) {
+        throw new NotFoundException(`Team with ID ${teamId} not found`);
+      }
+  
+      const users = await this.userRepository.find({ where: { teamId: team.id } });
+      // if (users.length === 0) {
+      //   throw new NotFoundException(`No users found for team ID ${teamId}`);
+      // }
+  
+      // Step 2: Create the policy
+      const policy = this.policyRepository.create({
+        policyName,
+        screenshotInterval,
+        organization,
+      });
+      await this.policyRepository.save(policy);
+  
+      // Step 3: Assign team and users to the policy
+      const teamCreate = this.PolicyTeamRepository.create({
+        policy:policy,
+        team:team,
       })
-    );
-    await this.PolicyUserRepository.save(policyUserEntries);
-
-    policy["assignedUsers"] = policyUserEntries;
-    // Step 6: Create and save ScreenshotSettings for the Policy
-    const screenshotSettings = this.ScreenshotSetRepository.create({
-      policy: policy,
-      organization_id: organization.id,
-      time_interval: screenshotInterval || 2,
-    });
-    await this.ScreenshotSetRepository.save(screenshotSettings);
-
-    // Step 7: Create and save TrackingHolidays for the Policy
-    const trackingHolidays = holidayList.map((holiday) =>
-      this.TrackHolidaysRepository.create({
-        holiday_name: holiday.dayName,
-        day_status: true,
-        holiday_date: holiday.date,
-        policy: policy,
-      })
-    );
-    await this.TrackHolidaysRepository.save(trackingHolidays);
-
-    // Step 8: Create and save TrackingWeekdays for the Policy
-    const trackingWeekdays = weekdayData.map((day) =>
-      this.TrackWeedaysRepository.create({
+      await this.PolicyTeamRepository.save(teamCreate);
+      
+      if(users?.length){
+        const policyUsers = users?.map((user) => ({
+          policy,
+          user,
+        }));
+        await this.PolicyUserRepository.save(policyUsers);
+      }
+  
+      // Step 4: Create related settings
+      const screenShotsSettings = this.ScreenshotSetRepository.create({
+        policy,
+        blurScreenshotsStatus:false,
+        monitoringStatus:true,
+        organization_id:policy?.organization?.id,
+        time_interval:2
+      }
+      )
+      await this.ScreenshotSetRepository.save(screenShotsSettings);
+  
+      const holidays = holidayList.map((holiday) => ({
+          holiday_date:holiday?.date,
+          holiday_name: holiday.dayName,
+          day_status: true,
+          holidayDate: holiday.date,
+          policy
+        }))
+      await this.TrackHolidaysRepository.save(holidays);
+  
+      const weekdays = weekdayData.map((day) => ({
+        policy,
         day_uuid: day.day_uuid,
         day_name: day.day_name,
         day_status: day.day_status,
@@ -1129,13 +1157,26 @@ export class OnboardingService {
         checkOut: this.convertTimeToMinutes(day.checkOut),
         break_start: this.convertTimeToMinutes(day.break_start),
         break_end: this.convertTimeToMinutes(day.break_end),
-        policy: policy,
-      })
-    );
-    await this.TrackWeedaysRepository.save(trackingWeekdays);
-
-    return this.getPolicyById(policy.policyId); // Return the policy with all related data
-}
+      }));
+      await this.TrackWeedaysRepository.save(weekdays);
+  
+      // Step 5: Return the complete policy with relations
+      return await this.policyRepository.findOne({
+        where: { policyId: policy?.policyId },
+        relations: [
+          'assignedTeams',
+          'assignedUsers',
+          'ScreenshotSettings',
+          'holidays',
+          'weekdays',
+        ],
+      }); 
+    } catch (error) {
+      // Handle any errors
+      throw new BadRequestException(`Failed to create policy: ${error.message}`);
+    }
+  }
+  
 
   convertTimeToMinutes(time: number): number {
     const hours = Math.floor(time / 100); // Extract hours (HH part)
@@ -1145,12 +1186,9 @@ export class OnboardingService {
 
   async getDetailsForPolicy(policies: Policy[]) {
     if (!policies.length) {
-      // throw new NotFoundException(
-      //   `Policy doesn't exist for the organization! Please create one.`,
-      // );
       return policies;
     }
-
+  
     const updatedPolicies = await Promise.all(
       policies.map(async (pol) => {
         pol['team'] = 0;
@@ -1159,44 +1197,57 @@ export class OnboardingService {
         pol['trackedWeekdays'] = weekdayData.length || 7;
         pol['productivityItems'] = '46';
         pol['screenshotInterval'] = 1;
-
-        // Get team and user  count for each policy
+  
+        // Get team and user count for each policy
         const team = await this.PolicyTeamRepository.find({
-          where: { policy: { policyId: pol?.policyId } },
-          relations:["team"]
+          where: {
+            policy: { policyId: pol?.policyId },
+            team: Not(IsNull()), // Only include records where the team is not null
+          },
+          relations: ['team'],
         });
+        // console.log(team)
         const user = await this.PolicyUserRepository.find({
-          where: { policy: { policyId: pol?.policyId } },
+          where: {
+            policy:{policyId:pol.policyId},
+            user: Not(IsNull()), // Only include records where the user is not null
+          },
+          relations: ['user'], // Ensure user details are loaded
         });
+  
         const screenshotTiming = await this.ScreenshotSetRepository.findOne({
           where: { policy: { policyId: pol?.policyId } },
         });
+  
         const trackWeekDays = await this.TrackWeedaysRepository.find({
           where: { policy: { policyId: pol?.policyId } },
         });
+  
         const trackHoliDays = await this.TrackHolidaysRepository.find({
           where: { policy: { policyId: pol?.policyId } },
         });
-        console.log("team",team);
-        console.log("trackWeekdays",trackWeekDays?.length);
-        console.log("trackHolidays",trackHoliDays?.length);
-        console.log("team",team?.length);
-        console.log("user",user?.length);
-        console.log("screenshotInterval",screenshotTiming?.time_interval);
+  
+        console.log('team', team);
+        console.log('trackWeekdays', trackWeekDays?.length);
+        console.log('trackHolidays', trackHoliDays?.length);
+        console.log('teamLength', team?.length);
+        console.log('userLength', user?.length);
+        console.log('screenshotInterval', screenshotTiming?.time_interval);
+  
         // Update the policy object with the fetched data
         pol['team'] = team?.length;
         pol['user'] = user?.length;
         pol['trackedHolidays'] = trackHoliDays?.length;
         pol['trackedWeekdays'] = trackWeekDays?.length;
-
         pol['screenshotInterval'] = screenshotTiming?.time_interval || 1;
-
+  
         return pol;
       }),
     );
-
+  
     return updatedPolicies;
   }
+  
 
   // Update a policy
   async updatePolicy(
@@ -1456,10 +1507,12 @@ export class OnboardingService {
     relations:[
       "ScreenshotSettings",
     ]});
+    console.log(policy)
     if(!policy?.policyId){
       throw new NotFoundException(`Policy with ID ${policyId} not found.`);
     }
-    const screenshotSeetings = await this.ScreenshotSetRepository.findOne({where:{policy:{policyId:policy?.policyId},screenshot_id},relations:["policy"]});
+    // const screenshotSeetings = await this.ScreenshotSetRepository.findOne({where:{policy:{policyId:policy?.policyId}},relations:["policy"]});
+    const screenshotSeetings = await this.ScreenshotSetRepository.findOne({where:{organization_id:policy?.organization?.id},relations:["policy"]});
     // let newScreenshotSetings = await  
     screenshotSeetings.blurScreenshotsStatus = blurScreenshotsStatus,
     screenshotSeetings.time_interval = time_interval,
@@ -1467,10 +1520,11 @@ export class OnboardingService {
      
     await this.ScreenshotSetRepository.save(screenshotSeetings);
     
-    console.log(screenshotSeetings);
+    console.log("screenshotSeetings",screenshotSeetings);
+    console.log("policy",policy);
 
     return screenshotSeetings;
-  }
+  } 
   async deletePolicy(policyId: string) {
     // Step 1: Find the policy to ensure it exists
     const policy = await this.policyRepository.findOne({ where: { policyId } });
@@ -1478,11 +1532,11 @@ export class OnboardingService {
     if (!policy) {
       throw new NotFoundException(`Policy with ID ${policyId} not found.`);
     }
-
+    this.logger.log("policy name: " + policy?.policyName)
     // Deleting ScreenshotSettings related to the policy
     await this.ScreenshotSetRepository.delete({ policy: { policyId } });
 
-    // Deleting Tracked Weekdays related to the policy
+    // Deleting Tracked Weekdays related to the policy 
     await this.TrackWeedaysRepository.delete({ policy: { policyId } });
 
     // Deleting Tracked Holidays related to the policy
@@ -1560,3 +1614,4 @@ export class OnboardingService {
   }
 
 }
+  

@@ -17,7 +17,7 @@ const rejectUnauthorized = dbUrl.includes('rejectUnauthorized=true');
 // TypeORM configuration with SSL
 const typeOrmConfig: TypeOrmModuleOptions = {
   type: 'mysql',
-  url: dbUrl,
+  url: dbUrl, 
   extra: {
     ssl: {
       rejectUnauthorized: rejectUnauthorized,

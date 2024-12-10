@@ -42,7 +42,7 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
-
+import * as archiver from 'archiver'; // For creating zip files
 @Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name)
@@ -62,16 +62,20 @@ export class OnboardingController {
     let token = req?.headers['authorization'];
     token = token?.split(' ')[1];
     try {
-      if (!token) {
-        return res.status(404).json({ Error: 'Token is missing!!' });
-      }
+      // if (!token) {
+      //   return res.status(404).json({ Error: 'Token is missing!!' });
+      // }
 
-      let isValidToken =
-        await this.organizationAdminService.IsValidateToken(token);
+      // let isValidToken =
+      //   await this.organizationAdminService.IsValidateToken(token);
 
-      if (!isValidToken) {
-        return res.status(401).json({ Error: 'Invalid User!!' });
-      }
+      // if (!isValidToken) {
+      //   return res.status(401).json({ Error: 'Invalid User!!' });
+      // }
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
 
       let organizationExist = await this.onboardingService.findOrganization(
         createOrganizationDto?.name?.toLowerCase(),
@@ -79,7 +83,7 @@ export class OnboardingController {
 
       if (organizationExist) {
         await this.organizationAdminService.updateUserOrganizationId(
-          isValidToken?.id,
+          organizationAdminIdString,
           organizationExist?.id,
         );
         return res
@@ -89,10 +93,13 @@ export class OnboardingController {
       let newOrganization = await this.onboardingService.createOrganization(
         createOrganizationDto,
       );
+
+      await this.onboardingService.createCalculatedLogicForNewOrganization(newOrganization.id);
       await this.organizationAdminService.updateUserOrganizationId(
-        isValidToken?.id,
+        organizationAdminIdString,
         newOrganization?.id,
       );
+      
       return res
         .status(201)
         .json({
@@ -968,7 +975,93 @@ export class OnboardingController {
         error: error.message,
       });
     }
+  }  
+  @Get("/downloadApplication")
+  async downloadApplication(@Res() res, @Req() req: Request) {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+  
+      // Retrieve organization details
+      const organization = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+  
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+  
+      const { filetype } = req.query;
+      const pkgFolderPath = path.join('D:', 'practise', 'SortWindDirectoryAndWork', 'NestJSCrud', 'tracktime-authentication', 'src', 'organisation', 'Installer', 'pkg');
+      const installerFolderPath = path.join(pkgFolderPath, '..'); // Parent directory of `pkg`
+      const configFilePath = path.join(pkgFolderPath, 'dev_config.txt');
+  
+      const key = 'an example very very secret key.';
+      const iv = Buffer.alloc(16, 0);
+  
+      let configContents = fs.readFileSync(configFilePath, 'utf8');
+      const deviceId = 'null';
+      const encryptedDeviceId = this.encryptData(deviceId, key, iv);
+      const encryptedOrganizationId = this.encryptData(organization, key, iv);
+  
+      const updatedConfig = configContents
+        .replace(/device_id=[^\n]*/gi, `device_id=${encryptedDeviceId}`)
+        .replace(/organizationId=[^\n]*/gi, `organizationId=${encryptedOrganizationId}`);
+  
+      fs.writeFileSync(configFilePath, updatedConfig);
+      console.log('Config file updated successfully');
+  
+      const outputZipPath = path.join(installerFolderPath, `${organization}_package.zip`);
+      const output = fs.createWriteStream(outputZipPath);
+      const archive = archiver('zip', { zlib: { level: 9 } });
+  
+      output.on('close', async () => {
+        console.log(`${archive.pointer()} total bytes`);
+        console.log('Archiver has been finalized and the output file descriptor has closed.');
+  
+        // Send the zip file
+        res.set({
+          'Content-Disposition': `attachment; filename="${organization}_package.zip"`,
+          'Content-Type': 'application/zip',
+        });
+        res.status(HttpStatus.OK).sendFile(outputZipPath, {}, async (err) => {
+          if (err) {
+            console.error('Error sending file:', err);
+          } else {
+            console.log('File sent successfully.');
+            // Delete the zip file after sending
+            try {
+              fs.unlinkSync(outputZipPath);
+              console.log('Zip file deleted successfully.');
+            } catch (unlinkError) {
+              console.error('Error deleting zip file:', unlinkError);
+            }
+          }
+        });
+      });
+  
+      archive.on('error', (err) => {
+        throw new HttpException('Error zipping the files', HttpStatus.INTERNAL_SERVER_ERROR);
+      });
+  
+      // Exclude existing zip files and add only files inside `pkg` directory
+      archive.glob('**/*', {
+        cwd: pkgFolderPath,
+        ignore: ['*.zip'], // Exclude zip files
+      });
+      archive.pipe(output);
+      archive.finalize();
+    } catch (error) {
+      console.error('Error:', error);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Failed to download the application!',
+        error: error.message,
+      }); 
+    }
   }
+  
+  
+  
 
   @Post("/organization/calculatedLogic")
   async createCalculatedLogic(
@@ -1099,35 +1192,29 @@ export class OnboardingController {
 
    // Route to create a new policy
    @Post('policy/create')
-   async createPolicy(
-     @Body() createPolicyDto: TrackingPolicyDTO,
-     @Res() res,
-     @Req() req,
-   ) {
+   async createPolicy(@Body() createPolicyDto: TrackingPolicyDTO, @Res() res, @Req() req) {
      try {
-      const organizationAdminId = req.headers['organizationAdminId'];
-      const organizationAdminIdString = Array.isArray(organizationAdminId)
-        ? organizationAdminId[0]
-        : organizationAdminId;
-  
-      const organization = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
-  
-      if (!organization) {
-        return res.status(404).json({ error: 'Organization not found !!' });
-      }
-      console.log(organization);
-
-      createPolicyDto["organizationId"] = organization;
-
+       const organizationAdminId = req.headers['organizationAdminId'];
+       const organizationAdminIdString = Array.isArray(organizationAdminId)
+         ? organizationAdminId[0]
+         : organizationAdminId;
+   
+       const organization = await this.organizationAdminService.findOrganizationById(organizationAdminIdString);
+   
+       if (!organization) {
+         return res.status(404).json({ error: 'Organization not found' });
+       }
+   
+       createPolicyDto.organizationId = organization; // Pass organization ID
        const newPolicy = await this.onboardingService.createPolicy(createPolicyDto);
+   
        return res.status(201).json({ message: 'Policy created successfully!', policy: newPolicy });
-
      } catch (error) {
-       console.log(error);
-       return res.status(500).json({ message: 'Failed to create policy!', error: error?.message });
+       console.error('Policy creation failed', error);
+       return res.status(500).json({ message: 'Failed to create policy', error: error.message });
      }
    }
- 
+   
    // Route to update a policy
    @Patch('policy/update/:id')
    async updatePolicy(
@@ -1173,7 +1260,7 @@ export class OnboardingController {
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
-      console.log("organization on policy page",organization);
+      // console.log("organization on policy page",organization);
        const policies = await this.onboardingService.getPoliciesForOrganization(organization);
 
        const getOtherDetailsForPolicy = await this.onboardingService.getDetailsForPolicy(policies);
@@ -1185,6 +1272,7 @@ export class OnboardingController {
        return res.status(500).json({ message: 'Failed to fetch policies!', error: error?.message });
      }
    }
+
 
  
 
@@ -1247,6 +1335,7 @@ export class OnboardingController {
       //   team['teamMembers'] = [];
       //   const teamMember =  
       // })
+       
        return res.status(200).json({ policy,teams,users });
      } catch (error) {
        return res.status(500).json({ message: 'Failed to fetch policy!', error: error?.message });
@@ -1276,6 +1365,7 @@ export class OnboardingController {
      try {
       console.log("Id",policyId)
       const {blurScreenshotsStatus,time_interval,screenshot_monitoring,screenshot_id} = body;
+      console.log(blurScreenshotsStatus,time_interval,screenshot_monitoring,screenshot_id,policyId);
        const screenshotSettings = await this.onboardingService.updateScreenShotSettings(policyId,screenshot_id,blurScreenshotsStatus,time_interval,screenshot_monitoring);
        return res.status(200).json({ screenshotSettings });
      } catch (error) {
