@@ -1,4 +1,0 @@
-{
-  "isPaid": false,
-  "trackTimeStatus": "Resume"
-}

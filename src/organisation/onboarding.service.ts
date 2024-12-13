@@ -167,7 +167,7 @@ export class OnboardingService {
     private PolicyUserRepository: Repository<PolicyUsers>,
     @InjectRepository(PolicyTeams)
     private PolicyTeamRepository: Repository<PolicyTeams>,
-    @InjectRepository(ScreenshotSettings)
+    @InjectRepository(ScreenshotSettings) 
     private ScreenshotSetRepository: Repository<ScreenshotSettings>,
     @InjectRepository(TrackingHolidays)
     private TrackHolidaysRepository: Repository<TrackingHolidays>,
@@ -549,7 +549,7 @@ export class OnboardingService {
     const userData = await this.userActivityRepository.find({
       where: { organization_id: organId },
     });
-    console.log(userData);
+    console.log("userData",userData);
     return userData;
   }
 
@@ -1365,6 +1365,15 @@ export class OnboardingService {
   // policy["assignedUsers"] = user;
   // policy["assignedTeams"] = policyTeam;
   return policy;
+ }
+
+ async getUserPolicyData(organId:string,userId:string):Promise<Policy[]>{
+  // let policy = await this.policyRepository.find({where:{organization:{id:organId}}});
+  console.log(organId,userId);
+  let policyUsersList = await this.policyRepository.find({where:{organization:{id:organId}},relations:["assignedUsers"]})
+  console.log("policyUsersList",policyUsersList)
+  return policyUsersList;
+  // return policyUsersList; 
  }
   async finalResponseData(
     userConfig: TrackTimeStatus,
