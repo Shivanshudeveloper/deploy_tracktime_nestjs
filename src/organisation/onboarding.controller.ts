@@ -17,7 +17,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
+import { DeployFlaskBaseApi, LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
@@ -678,7 +678,7 @@ export class OnboardingController {
       }
 
       // Fetch productivity data from Flask API
-      const flaskUrl = `${LocalFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
+      const flaskUrl = `${DeployFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
       const flaskResponse = await axios.get(flaskUrl, {
         params: { from: fromTime },
         headers: { 'Content-Type': 'application/json' }
