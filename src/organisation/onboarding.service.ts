@@ -35,6 +35,7 @@ import { TrackingHolidays } from './tracking_holidays.entity';
 import { TrackingWeekdays } from './tracking_weekdays.entity';
 import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
 import { organizationAdminService } from './OrganizationAdmin.service';
+import { ProductivitySettingEntity } from './prodsetting.entity';
 
 export const holidayList = [
   // Indian Holidays
@@ -132,10 +133,10 @@ const weekdayData = [
 
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
-const DeployFlaskBaseApi =
+export const DeployFlaskBaseApi =
   'https://python-link-classification-u2xx.onrender.com';
 
-const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
+export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
 
 @Injectable()
@@ -173,9 +174,10 @@ export class OnboardingService {
     private TrackHolidaysRepository: Repository<TrackingHolidays>,
     @InjectRepository(TrackingWeekdays)
     private TrackWeedaysRepository: Repository<TrackingWeekdays>,
+    @InjectRepository(ProductivitySettingEntity)
+    private TrackProdSettingsRepository: Repository<ProductivitySettingEntity>,
     @InjectRepository(CalculatedLogic)
     private calculatedLogicRepository: Repository<CalculatedLogic>,
-    private readonly organizationAdminService: organizationAdminService,
   ) {
     this.s3 = new S3({
       endpoint: this.ConfigureService.get<string>('WASABI_ENDPOINT'),
@@ -214,6 +216,56 @@ export class OnboardingService {
     return true;
 
   }
+
+
+  async getLastestActivity(organid: string): Promise<{ [key: string]: string }> {
+    try {
+      // Fetch all user activities for the organization
+      const userActivities = await this.userActivityRepository.find({
+        where: { organization_id: organid },
+      });
+
+      // Map latest activity for each user
+      const userLatestActivities = userActivities.reduce((acc, activity) => {
+        const userId = activity.user_uid;
+        const activityTimestamp = new Date(activity.timestamp).getTime();
+
+        // Only update if no entry exists or the current activity is newer
+        if (!acc[userId] || new Date(acc[userId].timestamp).getTime() < activityTimestamp) {
+          acc[userId] = activity;
+        }
+
+        return acc;
+      }, {} as { [key: string]: UserActivity });
+
+      // Map to userId -> lastActive (human-readable time difference)
+      const now = Date.now();
+      const result = Object.keys(userLatestActivities).reduce((acc, userId) => {
+        const lastActivityTime = new Date(userLatestActivities[userId].timestamp).getTime();
+        acc[userId] = this.getTimeAgo(now - lastActivityTime); // Human-readable time
+        return acc;
+      }, {} as { [key: string]: string });
+
+      console.log('User Latest Activity:', result);
+      return result;
+    } catch (error) {
+      console.error('Error fetching latest activity:', error);
+      throw new Error('Failed to fetch latest activity');
+    }
+  }
+
+  private getTimeAgo(diffInMs: number): string {
+    const seconds = Math.floor(diffInMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
+  }
+
   async getDeskTopName(organization:string):Promise<string> {
     const appName = await this.desktopAppRepository.findOne({where:{organizationId:organization}});
     console.log(appName);
@@ -407,14 +459,14 @@ export class OnboardingService {
       where: { organization_id: organId },
     });
 
-    console.log('devices: ' + devices);
+    console.log('devices: ' , devices.length);
     if (!devices?.length) {
       return null;
     }
-    console.log('devicesInfo: ' + deviceInfo);
+    console.log('devicesInfo: ' + deviceInfo.length);
 
     devices = devices.map((item) => {
-      console.log('device: ' + item);
+      // console.log('device: ' + item);
       deviceInfo.map((itemInfo) => {
         // console.log("status",itemInfo?.user_uid === item?.device_uid)
         if (itemInfo?.user_uid === item?.device_uid) {
@@ -451,9 +503,9 @@ export class OnboardingService {
     //If findOneBy is not recognized or you prefer a more explicit approach, use findOne:
     //apply here the logic for sorting the data in timing format and then get's teh data wanted
     const FetchedData = await this.userActivityRepository.find({
-      where: { user_uid: id },
+      where: { user_uid: id,organization_id:organId },
     });
-    console.log('fetched data', FetchedData);
+    // console.log('fetched data', FetchedData);
     const ImgData = await this.fetchScreenShot();
     const userData = await this.findAllDevices(organId);
 
@@ -486,11 +538,11 @@ export class OnboardingService {
     const skip = (page - 1) * limit;
     const take = limit * page;
     const userDataInLimit = userUnsortedData?.slice(skip, take);
-    console.log(page, limit, skip, take);
+    // console.log(page, limit, skip, take);
     return userDataInLimit;
     // const user = await this.userActivityRepository.find({ where: { user_uid:id },
     // skip,
-    // take
+    // take 
     // });
     //  const userDetails = userUnsortedData?.slice(skip,take+1);
 
@@ -549,7 +601,7 @@ export class OnboardingService {
     const userData = await this.userActivityRepository.find({
       where: { organization_id: organId },
     });
-    console.log("userData",userData);
+    // console.log("userData",userData);
     return userData;
   }
 
@@ -617,10 +669,17 @@ export class OnboardingService {
 
   async getUserDeviceId(deviceId: string) {
     try {
-      const device = await this.devicesRepository.find({
+      const device = await this.devicesRepository.findOne({
         where: { device_uid: deviceId },
       });
-
+      const organizationDetails = await this.organizationRepository.findOne({
+        where:{id:device.organization_uid}
+      })
+      const users = await this.userRepository.findOne({where:{userUUID:device?.user_uid},relations:["team"]});
+       
+      console.log("users_team", users.team);
+      device["organizationDetails"] = organizationDetails;
+      device["organizationTeam"] = users.team;
       console.log(device);
 
       return device;

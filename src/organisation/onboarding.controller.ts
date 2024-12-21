@@ -17,7 +17,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { OnboardingService } from './onboarding.service';
+import { LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
@@ -43,6 +43,7 @@ import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
 import * as archiver from 'archiver'; // For creating zip files
+import axios from 'axios';
 @Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name);
@@ -366,7 +367,7 @@ export class OnboardingController {
           OrganizationId,
         );
 
-      console.log('team', team);
+      // console.log('team', team);
 
       if (!team.length) {
         return res
@@ -484,8 +485,6 @@ export class OnboardingController {
         .json({ message: 'Organization Admin ID is required' });
     }
 
-    console.log('organizationAdminId', organizationAdminIdString);
-
     try {
       const OrganizationId =
         await this.organizationAdminService.findOrganizationById(
@@ -496,83 +495,97 @@ export class OnboardingController {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
 
-      const devices = await this.onboardingService.findAllDevices(OrganizationId);
-      const users = await this.onboardingService.findAllUsers(OrganizationId);
-      const images = await this.onboardingService.fetchScreenShot();
-      const organization = await this.onboardingService.fetchAllOrganization(OrganizationId);
-      const teams = await this.onboardingService.getAllTeam(OrganizationId);
-      const userActivities = await this.onboardingService.getAllUserActivityData(organization?.id);
-      const policy = await this.onboardingService.getPoliciesForOrganization(organization?.id)
-      // const userPolicy = await this.onboardingService.getUserPolicyData(organization?.id,device?.id);
-      // let userPolicyList = await this.onboardingService.getPolicyTeamAndUser(pol?.policyId);
-      const finalPolicyData = policy?.map(async(pol)=>{
-       return await this.onboardingService.getPolicyTeamAndUser(pol?.policyId);
-      })
-      console.log("finalPolicyData",finalPolicyData)
-      // Logging the fetched data to ensure it is correct
-      // console.log('Fetched devices:', devices);
-      // console.log('Fetched users:', users);
-      // console.log('Fetched images:', images);
-      // console.log('Fetched organization:', organization);
-      // console.log('Fetched teams:', teams);
+      const [
+        devices,
+        users,
+        images,
+        organization,
+        teams,
+        userActivities,
+        policies,
+        lastActive,
+      ] = await Promise.all([
+        this.onboardingService.findAllDevices(OrganizationId),
+        this.onboardingService.findAllUsers(OrganizationId),
+        this.onboardingService.fetchScreenShot(),
+        this.onboardingService.fetchAllOrganization(OrganizationId),
+        this.onboardingService.getAllTeam(OrganizationId),
+        this.onboardingService.getAllUserActivityData(OrganizationId),
+        this.onboardingService.getPoliciesForOrganization(OrganizationId),
+        this.onboardingService.getLastestActivity(OrganizationId),
+      ]);
 
-      images?.sort((a, b) => {
-        const timeA = new Date(a.lastModified).getTime();
-        const timeB = new Date(b.lastModified).getTime();
-        return timeB - timeA;
-      });
+      const resolvedPolicies = await Promise.all(
+        policies.map(async (pol) =>
+          this.onboardingService.getPolicyTeamAndUser(pol.policyId),
+        ),
+      );
 
-      devices?.forEach(async(device) => {
+      images?.sort(
+        (a, b) =>
+          new Date(b.lastModified).getTime() -
+          new Date(a.lastModified).getTime(),
+      );
+
+      for (const device of devices) {
         device['LatestImage'] = null;
         device['userDetail'] = null;
         device['organizationDetail'] = organization;
         device['teamDetail'] = null;
-        device["timeZone"] = null;
-        device["IP_Adress"] = null;
+        device['timeZone'] = organization?.timeZone;
+        device['IP_Adress'] = null;
+        device['policy'] = null;
+        device['lastActive'] = null; // we can remove this as becase we are using latestImage in user to get LastActive.
+        // Assign Latest Image
+        const matchingImage = images.find(
+          (img) =>
+            img.key.split('/')[1].split('|')[1].split('.')[0] ===
+            device.device_uid,
+        );
+        if (matchingImage) {
+          device['LatestImage'] = matchingImage;
+        }
+        device['lastActive'] = lastActive[device?.device_uid];
+        // Assign IP Address
+        const userActivity = userActivities.find(
+          (activity) => activity.user_uid === device.user_uid,
+        );
 
-        images.forEach((img) => {
-          const userUUID = img?.key.split('/')[1].split('|')[1].split('.')[0];
-          if (userUUID === device?.device_uid && !device['LatestImage']) {
-            device['LatestImage'] = img;
+        if (userActivity) {
+          device['IP_Adress'] = userActivity.ip_address;
+        }
+
+        // Assign Policy
+        for (const policy of resolvedPolicies) {
+          const isUserAssigned = policy.assignedUsers?.some(
+            (userPol) => userPol.user?.userUUID === device.user_uid,
+          );
+          if (isUserAssigned) {
+            device['policy'] = policy.policyName;
+            break;
           }
-        });
-        device["timeZone"] = organization?.timeZone;
+        }
 
-        userActivities.forEach((userActivity=>{
-          if(userActivity?.user_uid === device?.user_uid){
-            console.log(userActivity?.ip_address)
-            device["IP_Adress"] = userActivity?.ip_address;
+        // Assign User Details
+        const userDetail = users.find(
+          (user) => user.userUUID === device.user_uid,
+        );
+        if (userDetail) {
+          device['userDetail'] = userDetail;
+
+          // Assign Team Details
+          const teamDetail = teams.find(
+            (team) => team.id === userDetail.teamId,
+          );
+          if (teamDetail) {
+            device['teamDetail'] = teamDetail;
           }
-        }))
-        
-        // const finalPolicyData = policy?.map(async(pol)=>{
-      // let usersPolicy = await this.onboardingService.getUserPolicyData(organization?.id,device?.user_uid);
-        //  })
-
-        users.forEach((user) => {
-          if (device?.user_uid === user.userUUID) {
-            device['userDetail'] = user;
-          }
-        });
-
-        teams?.forEach((team) => {
-          users?.forEach((user) => {
-            if (device?.user_uid === user.userUUID && user.teamId === team.id) {
-              device['teamDetail'] = team;
-            }
-          });
-        });
-
-        // Log the device after all assignments
-        console.log('Processed device:', device);
-      });
-
-
-      
+        }
+      }
 
       console.log('Final processed devices:', devices);
       return res.status(200).json({ devices, organization });
-    } catch (error) { 
+    } catch (error) {
       console.error('Failed to fetch devices:', error);
       return res
         .status(500)
@@ -616,9 +629,12 @@ export class OnboardingController {
         page,
         Limit,
       );
+      const userDetails = await this.onboardingService.getUserDeviceId(id);
+      // console.log("userDetails", userDetails);
       const dataCount = await this.onboardingService.getUserDataCount(id);
-      console.log(user, dataCount);
-      return res.status(200).json({ user, dataCount });
+      console.log(user.length, dataCount);
+
+      return res.status(200).json({ user, dataCount, userDetails });
     } catch (error) {
       if (error.message === 'User not found') {
         return res.status(404).json({ message: error.message });
@@ -627,6 +643,65 @@ export class OnboardingController {
         message: 'Failed to fetch user details',
         error: error.message,
       });
+    }
+  }
+
+  @Get('/getProductivityDetails/:userId')
+  async getProductivityDetails(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('userId') userId: string,
+    @Query('from') fromTime: string
+  ): Promise<any> {
+    try {
+      // Validate the 'from' date
+      if (!fromTime || isNaN(Date.parse(fromTime))) {
+        return res.status(400).json({ error: 'Invalid or missing `from` date. Use YYYY-MM-DD format.' });
+      }
+
+      // Retrieve the organization admin ID from headers
+      const organizationAdminId = req.headers['organizationAdminId'] as string;
+      if (!organizationAdminId) {
+        return res.status(400).json({ error: 'Missing organizationAdminId header.' });
+      }
+
+      // Find organization by admin ID
+      const organization = await this.organizationAdminService.findOrganizationById(organizationAdminId);
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found.' });
+      }
+
+      // Validate the user/device
+      const requestingUser = await this.onboardingService.validateDeviceById(userId);
+      if (!requestingUser) {
+        return res.status(404).json({ error: 'User or device not found.' });
+      }
+
+      // Fetch productivity data from Flask API
+      const flaskUrl = `${LocalFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
+      const flaskResponse = await axios.get(flaskUrl, {
+        params: { from: fromTime },
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      // Check if Flask response is valid
+      if (!flaskResponse || !flaskResponse.data) {
+        return res.status(500).json({ error: 'Failed to retrieve data from productivity service.' });
+      }
+
+      // Return the response from Flask to the frontend
+      return res.status(200).json(flaskResponse.data);
+    } catch (error) {
+      console.error('Error fetching productivity details:', error.message);
+
+      // Handle specific axios errors
+      if (axios.isAxiosError(error)) {
+        return res.status(error.response?.status || 500).json({
+          error: error.response?.data || 'Error communicating with the productivity service.'
+        });
+      }
+
+      return res.status(500).json({ error: 'Internal server error.' });
     }
   }
 
@@ -1197,12 +1272,10 @@ export class OnboardingController {
       const calculatedLogic =
         await this.onboardingService.createCalculatedLogic(body, organization);
 
-      return res
-        .status(201)
-        .json({
-          calculatedLogic,
-          message: 'Caculated logic successfully created.',
-        });
+      return res.status(201).json({
+        calculatedLogic,
+        message: 'Caculated logic successfully created.',
+      });
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to create Calculated Logic',
@@ -1310,20 +1383,15 @@ export class OnboardingController {
         );
 
       if (!updateOrganization) {
-        return res
-          .status(304)
-          .json({
-            message:
-              'Not able to update organization data. Please try again.!😢',
-          });
+        return res.status(304).json({
+          message: 'Not able to update organization data. Please try again.!😢',
+        });
       }
 
-      return res
-        .status(200)
-        .json({
-          message: 'Organization updated successfully!!',
-          organization: updateOrganization,
-        });
+      return res.status(200).json({
+        message: 'Organization updated successfully!!',
+        organization: updateOrganization,
+      });
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to update organization data',
@@ -1394,12 +1462,10 @@ export class OnboardingController {
         policyId,
         updatePolicyDto,
       );
-      return res
-        .status(200)
-        .json({
-          message: 'Policy updated successfully!',
-          policy: updatedPolicy,
-        });
+      return res.status(200).json({
+        message: 'Policy updated successfully!',
+        policy: updatedPolicy,
+      });
     } catch (error) {
       console.log(error);
       return res
@@ -1584,12 +1650,10 @@ export class OnboardingController {
         );
       return res.status(200).json({ screenshotSettings });
     } catch (error) {
-      return res
-        .status(500)
-        .json({
-          message: 'Failed to update screenshot!',
-          error: error?.message,
-        });
+      return res.status(500).json({
+        message: 'Failed to update screenshot!',
+        error: error?.message,
+      });
     }
   }
 }
