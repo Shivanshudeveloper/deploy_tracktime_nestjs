@@ -17,7 +17,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { DeployFlaskBaseApi, LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
+import { LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
@@ -645,6 +645,50 @@ export class OnboardingController {
       });
     }
   }
+  @Get('/users/AppUsageStatics/:id')
+  async getAppUsageStatics(
+    @Param('id') userId: string,
+    @Res() res: Response,
+    @Req() req: Request,
+  ): Promise<Response> {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    if (!organizationAdminIdString) {
+      return res
+        .status(400)
+        .json({ message: 'Organization Admin ID is required' });
+    }
+
+    console.log('organizationAdminId', organizationAdminIdString);
+
+    try {
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+      const totalActiveTime = await this.onboardingService.getAppUsageStatics(
+        OrganizationId,
+        userId,
+      );
+
+      return res.status(200).json(totalActiveTime);
+    } catch (error) {
+      if (error.message === 'User not found') {
+        return res.status(404).json({ message: error.message });
+      }
+      return res.status(500).json({
+        message: 'Failed to fetch user details',
+        error: error.message,
+      });
+    }
+  }
 
   @Get('/getProductivityDetails/:userId')
   async getProductivityDetails(
@@ -678,7 +722,7 @@ export class OnboardingController {
       }
 
       // Fetch productivity data from Flask API
-      const flaskUrl = `${DeployFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
+      const flaskUrl = `${LocalFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
       const flaskResponse = await axios.get(flaskUrl, {
         params: { from: fromTime },
         headers: { 'Content-Type': 'application/json' }

@@ -17,7 +17,7 @@ import { DeepPartial } from 'typeorm';
 import { prototype } from 'events';
 import { ConfigService } from '@nestjs/config';
 import fs from 'fs';
-import { S3 } from 'aws-sdk';
+import { AccessAnalyzer, S3 } from 'aws-sdk';
 import { Devices } from './devices.entity';
 import { validate } from 'class-validator';
 import { Subscription } from './subscription.entity';
@@ -133,10 +133,10 @@ const weekdayData = [
 
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
-export const DeployFlaskBaseApi =
+export const LocalFlaskBaseApi =
   'https://python-link-classification-u2xx.onrender.com';
 
-export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
+// export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
 
 @Injectable()
@@ -144,7 +144,7 @@ export class OnboardingService {
   private s3: S3;
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-07-14`; // Flask API URL
-  private flaskBaseApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`;
+  private flaskBaseApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity`;
   private readonly logger = new Logger(OnboardingService.name);
   constructor(
     @InjectRepository(Organization)
@@ -266,6 +266,50 @@ export class OnboardingService {
     return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
   }
 
+  async getAppUsageStatics(organizationId: string, userId: string): Promise<any> {
+    try {
+      const userActivities = await this.userActivityRepository.find({
+        where: { organization_id: organizationId, user_uid: userId },
+      });
+  
+      // Count the active time for each app
+      const totalActiveTime: Record<string, number> = {};
+      userActivities.forEach((activity) => {
+        if (activity?.app_name) {
+          if (totalActiveTime[activity.app_name]) {
+            totalActiveTime[activity.app_name]++;
+          } else {
+            totalActiveTime[activity.app_name] = 1;
+          }
+        }
+      });
+  
+      // Calculate percentages and transform the format
+      const formattedData = this.calculatePercentages(totalActiveTime);
+  
+      return formattedData;
+  
+    } catch (error) {
+      console.log("Error fetching app usage statics", error);
+      throw new Error("Failed to fetch app usage statics");
+    }
+  }
+  
+  private calculatePercentages = (usageData: Record<string, number>): { name: string; percent: number }[] => {
+    const totalUsage = Object.values(usageData).reduce((sum, count) => sum + count, 0);
+    const percentages: { name: string; percent: number }[] = [];
+  
+    for (const [appName, usageCount] of Object.entries(usageData)) {
+      percentages.push({
+        name: appName,
+        percent: Math.round((usageCount / totalUsage) * 100),
+      });
+    }
+  
+    return percentages;
+  };
+  
+  
   async getDeskTopName(organization:string):Promise<string> {
     const appName = await this.desktopAppRepository.findOne({where:{organizationId:organization}});
     console.log(appName);
