@@ -1,4 +1,3 @@
-
 import {
   BadRequestException,
   Injectable,
@@ -133,18 +132,18 @@ const weekdayData = [
 
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
-export const LocalFlaskBaseApi =
-  'https://python-link-classification-u2xx.onrender.com';
+export const DeployFlaskBaseApi =
+  'https://python-link-classification-ekpw.onrender.com';
 
-// export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
+export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
 
-@Injectable()
+@Injectable()  
 export class OnboardingService {
   private s3: S3;
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-07-14`; // Flask API URL
-  private flaskBaseApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity`;
+  private flaskBaseApiUrl = `${DeployFlaskBaseApi}/calculate_hourly_productivity`;
   private readonly logger = new Logger(OnboardingService.name);
   constructor(
     @InjectRepository(Organization)
@@ -168,7 +167,7 @@ export class OnboardingService {
     private PolicyUserRepository: Repository<PolicyUsers>,
     @InjectRepository(PolicyTeams)
     private PolicyTeamRepository: Repository<PolicyTeams>,
-    @InjectRepository(ScreenshotSettings) 
+    @InjectRepository(ScreenshotSettings)
     private ScreenshotSetRepository: Repository<ScreenshotSettings>,
     @InjectRepository(TrackingHolidays)
     private TrackHolidaysRepository: Repository<TrackingHolidays>,
@@ -200,8 +199,10 @@ export class OnboardingService {
     return null;
   }
 
-  async createCalculatedLogicForNewOrganization(organizationId:string):Promise<boolean>{
-    if(!organizationId){
+  async createCalculatedLogicForNewOrganization(
+    organizationId: string,
+  ): Promise<boolean> {
+    if (!organizationId) {
       return false;
     }
     const calculatedLogic = this.calculatedLogicRepository.create({
@@ -214,11 +215,11 @@ export class OnboardingService {
     await this.calculatedLogicRepository.save(calculatedLogic);
 
     return true;
-
   }
 
-
-  async getLastestActivity(organid: string): Promise<{ [key: string]: string }> {
+  async getLastestActivity(
+    organid: string,
+  ): Promise<{ [key: string]: string }> {
     try {
       // Fetch all user activities for the organization
       const userActivities = await this.userActivityRepository.find({
@@ -226,25 +227,36 @@ export class OnboardingService {
       });
 
       // Map latest activity for each user
-      const userLatestActivities = userActivities.reduce((acc, activity) => {
-        const userId = activity.user_uid;
-        const activityTimestamp = new Date(activity.timestamp).getTime();
+      const userLatestActivities = userActivities.reduce(
+        (acc, activity) => {
+          const userId = activity.user_uid;
+          const activityTimestamp = new Date(activity.timestamp).getTime();
 
-        // Only update if no entry exists or the current activity is newer
-        if (!acc[userId] || new Date(acc[userId].timestamp).getTime() < activityTimestamp) {
-          acc[userId] = activity;
-        }
+          // Only update if no entry exists or the current activity is newer
+          if (
+            !acc[userId] ||
+            new Date(acc[userId].timestamp).getTime() < activityTimestamp
+          ) {
+            acc[userId] = activity;
+          }
 
-        return acc;
-      }, {} as { [key: string]: UserActivity });
+          return acc;
+        },
+        {} as { [key: string]: UserActivity },
+      );
 
       // Map to userId -> lastActive (human-readable time difference)
       const now = Date.now();
-      const result = Object.keys(userLatestActivities).reduce((acc, userId) => {
-        const lastActivityTime = new Date(userLatestActivities[userId].timestamp).getTime();
-        acc[userId] = this.getTimeAgo(now - lastActivityTime); // Human-readable time
-        return acc;
-      }, {} as { [key: string]: string });
+      const result = Object.keys(userLatestActivities).reduce(
+        (acc, userId) => {
+          const lastActivityTime = new Date(
+            userLatestActivities[userId].timestamp,
+          ).getTime();
+          acc[userId] = this.getTimeAgo(now - lastActivityTime); // Human-readable time
+          return acc;
+        },
+        {} as { [key: string]: string },
+      );
 
       console.log('User Latest Activity:', result);
       return result;
@@ -266,12 +278,15 @@ export class OnboardingService {
     return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
   }
 
-  async getAppUsageStatics(organizationId: string, userId: string): Promise<any> {
+  async getAppUsageStatics(
+    organizationId: string,
+    userId: string,
+  ): Promise<any> {
     try {
       const userActivities = await this.userActivityRepository.find({
         where: { organization_id: organizationId, user_uid: userId },
       });
-  
+
       // Count the active time for each app
       const totalActiveTime: Record<string, number> = {};
       userActivities.forEach((activity) => {
@@ -283,37 +298,42 @@ export class OnboardingService {
           }
         }
       });
-  
+
       // Calculate percentages and transform the format
       const formattedData = this.calculatePercentages(totalActiveTime);
-  
+
       return formattedData;
-  
     } catch (error) {
-      console.log("Error fetching app usage statics", error);
-      throw new Error("Failed to fetch app usage statics");
+      console.log('Error fetching app usage statics', error);
+      throw new Error('Failed to fetch app usage statics');
     }
   }
-  
-  private calculatePercentages = (usageData: Record<string, number>): { name: string; percent: number }[] => {
-    const totalUsage = Object.values(usageData).reduce((sum, count) => sum + count, 0);
+
+  private calculatePercentages = (
+    usageData: Record<string, number>,
+  ): { name: string; percent: number }[] => {
+    const totalUsage = Object.values(usageData).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
     const percentages: { name: string; percent: number }[] = [];
-  
+
     for (const [appName, usageCount] of Object.entries(usageData)) {
       percentages.push({
         name: appName,
         percent: Math.round((usageCount / totalUsage) * 100),
       });
     }
-  
+
     return percentages;
   };
-  
-  
-  async getDeskTopName(organization:string):Promise<string> {
-    const appName = await this.desktopAppRepository.findOne({where:{organizationId:organization}});
+
+  async getDeskTopName(organization: string): Promise<string> {
+    const appName = await this.desktopAppRepository.findOne({
+      where: { organizationId: organization },
+    });
     console.log(appName);
-    return appName.name || "trackTime"
+    return appName.name || 'trackTime';
   }
   async updateOrganization(
     Organization: Organization,
@@ -365,8 +385,10 @@ export class OnboardingService {
     }
   }
 
-  async getAllusers(organId:string):Promise<User[]> {
-    const users = await this.userRepository.find({where:{organizationId:organId}});
+  async getAllusers(organId: string): Promise<User[]> {
+    const users = await this.userRepository.find({
+      where: { organizationId: organId },
+    });
     return users;
   }
   async createOrganization(data: CreateOrganizationDTO): Promise<Organization> {
@@ -417,7 +439,6 @@ export class OnboardingService {
     //   // isOrganization = await this.organizationAdminService.findOrganization(isOrganization.id)
     //   // return isOrganization.id;
     // }
-
 
     return isOrganization;
   }
@@ -503,11 +524,11 @@ export class OnboardingService {
       where: { organization_id: organId },
     });
 
-    console.log('devices: ' , devices.length);
+    console.log('devices: ', devices.length);
     if (!devices?.length) {
       return null;
     }
-    console.log('devicesInfo: ' + deviceInfo.length);
+    // console.log('devicesInfo: ' + deviceInfo.length);
 
     devices = devices.map((item) => {
       // console.log('device: ' + item);
@@ -547,7 +568,7 @@ export class OnboardingService {
     //If findOneBy is not recognized or you prefer a more explicit approach, use findOne:
     //apply here the logic for sorting the data in timing format and then get's teh data wanted
     const FetchedData = await this.userActivityRepository.find({
-      where: { user_uid: id,organization_id:organId },
+      where: { user_uid: id, organization_id: organId },
     });
     // console.log('fetched data', FetchedData);
     const ImgData = await this.fetchScreenShot();
@@ -586,7 +607,7 @@ export class OnboardingService {
     return userDataInLimit;
     // const user = await this.userActivityRepository.find({ where: { user_uid:id },
     // skip,
-    // take 
+    // take
     // });
     //  const userDetails = userUnsortedData?.slice(skip,take+1);
 
@@ -648,6 +669,209 @@ export class OnboardingService {
     // console.log("userData",userData);
     return userData;
   }
+  async getTimeSheetData(
+    userActivities: UserActivity[],
+    from: string,
+    organizationId: string,
+  ) {
+    // Fetch all devices associated with the organization
+    const devices = await this.devicesRepository.find({
+      where: { organization_uid: organizationId },
+    });
+  
+    const deviceIds = devices.map((device) => device.device_uid);
+  
+    // Filter activities based on device IDs and target date
+    const targetDate = new Date(from);
+    const filteredActivities = userActivities.filter(
+      (activity) =>
+        deviceIds.includes(activity.user_uid) &&
+        this.isSameDay(new Date(activity.timestamp), targetDate),
+    );
+  
+    // Group activities by user/device
+    const groupedByUser = this.groupByUser(filteredActivities);
+  
+    // Process daily, weekly, and monthly data with devices list
+    const daily = this.calculateDaily(groupedByUser,devices);
+    const weekly = this.calculateWeekly(groupedByUser, targetDate, devices);
+    const monthly = this.calculateMonthly(groupedByUser, targetDate, devices);
+    
+    return { daily, weekly, monthly };
+  }
+  
+  private calculateDaily(
+    groupedActivities: Record<string, UserActivity[]>,
+    devices: Devices[],
+  ) {
+    return devices.map(({ device_uid, device_name ,user_name}) => {
+      const activities = groupedActivities[device_uid] || [];
+  
+      if (activities.length === 0) {
+        return {
+          id: device_uid,
+          name: user_name || device_name,
+          InTime: "00:00",
+          OutTime: "00:00",
+          WorkHour: "00:00",
+        };
+      }
+  
+      const sortedActivities = activities.sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      );
+  
+      const inTime = sortedActivities[0].timestamp;
+      const outTime = sortedActivities[sortedActivities.length - 1].timestamp;
+  
+      return {
+        id: device_uid,
+        name: user_name || device_name,
+        InTime: this.formatTime(inTime),
+        OutTime: this.formatTime(outTime),
+        WorkHour: this.calculateDuration(inTime, outTime),
+      };
+    });
+  }
+
+  private calculateWeekly(
+    groupedActivities: Record<string, UserActivity[]>,
+    targetDate: Date,
+    devices: Devices[],
+  ) {
+    let weekStart = new Date(targetDate);
+    weekStart.setDate(weekStart.getDate() - 6);
+  
+    return devices.map(({ device_uid, device_name,user_name }) => {
+      const activities = groupedActivities[device_uid] || [];
+  
+      if (activities.length === 0) {
+        return {
+          id: device_uid,
+          name: user_name || device_name,
+          WorkHour: "00:00",
+          WorkDays: 0,
+        };
+      }
+  
+      const weeklyActivities = activities.filter((activity) => {
+        const activityDate = new Date(activity.timestamp);
+        return activityDate >= weekStart && activityDate <= targetDate;
+      });
+  
+      const daysWorked = new Set(
+        weeklyActivities.map((activity) =>
+          new Date(activity.timestamp).toDateString(),
+        ),
+      );
+  
+      let totalWorkHours = 0;
+      if (weeklyActivities.length > 1) {
+        const allTimestamps = weeklyActivities.map((activity) =>
+          new Date(activity.timestamp).getTime(),
+        );
+        const weekInTime = Math.min(...allTimestamps);
+        const weekOutTime = Math.max(...allTimestamps);
+        totalWorkHours = (weekOutTime - weekInTime) / (1000 * 60 * 60);
+      }
+  
+      return {
+        id: device_uid,
+        name: user_name || device_name,
+        WorkHour: totalWorkHours.toFixed(2),
+        WorkDays: daysWorked.size,
+      };
+    });
+  }
+
+  private calculateMonthly(
+    groupedActivities: Record<string, UserActivity[]>,
+    targetDate: Date,
+    devices: Devices[],
+  ) {
+    const monthStart = new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      1,
+    );
+  
+    return devices.map(({ device_uid, device_name,user_name }) => {
+      const activities = groupedActivities[device_uid] || [];
+  
+      if (activities.length === 0) {
+        return {
+          id: device_uid,
+          name: user_name || device_name,
+          WorkHour: "00:00",
+          WorkDays: 0,
+        };
+      }
+  
+      const monthlyActivities = activities.filter((activity) => {
+        const activityDate = new Date(activity.timestamp);
+        return activityDate >= monthStart && activityDate <= targetDate;
+      });
+  
+      const daysWorked = new Set(
+        monthlyActivities.map((activity) =>
+          new Date(activity.timestamp).toDateString(),
+        ),
+      );
+  
+      let totalWorkHours = 0;
+      if (monthlyActivities.length > 1) {
+        const allTimestamps = monthlyActivities.map((activity) =>
+          new Date(activity.timestamp).getTime(),
+        );
+        const monthInTime = Math.min(...allTimestamps);
+        const monthOutTime = Math.max(...allTimestamps);
+        totalWorkHours = (monthOutTime - monthInTime) / (1000 * 60 * 60);
+      }
+  
+      return {
+        id: device_uid,
+        name: user_name || device_name,
+        WorkHour: totalWorkHours.toFixed(2),
+        WorkDays: daysWorked.size,
+      };
+    });
+  }
+
+  private groupByUser(activities: UserActivity[]) {
+    return activities.reduce((grouped, activity) => {
+      if (!grouped[activity.user_uid]) {
+        grouped[activity.user_uid] = [];
+      }
+      grouped[activity.user_uid].push(activity);
+      return grouped;
+    }, {});
+  }
+
+  private isSameDay(date1: Date, date2: Date): boolean {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
+
+  private isWithinRange(date: Date, start: Date, end: Date): boolean {
+    return date >= start && date <= end;
+  }
+
+  private formatTime(timestamp: Date): string {
+    const date = new Date(timestamp);
+    return date.toTimeString().split(' ')[0].slice(0, 5); // HH:mm format
+  }
+
+  private calculateDuration(start: Date, end: Date): string {
+    const duration =
+      (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60); // in hours
+    return `${Math.floor(duration)}:${Math.round((duration % 1) * 60)
+      .toString()
+      .padStart(2, '0')}`;
+  }
 
   async validateOrganization(organid: string): Promise<boolean> {
     const organId = await this.organizationRepository.findOne({
@@ -700,7 +924,7 @@ export class OnboardingService {
       user_uid: user_uid ? user_uid : null,
       mac_address: mac_address ? mac_address : null,
       device_name: deviceName,
-      config:{trackTimeStatus:TrackTimeStatus.Resume},
+      config: { trackTimeStatus: TrackTimeStatus.Resume },
     });
 
     // Save the new device to the database
@@ -717,13 +941,16 @@ export class OnboardingService {
         where: { device_uid: deviceId },
       });
       const organizationDetails = await this.organizationRepository.findOne({
-        where:{id:device.organization_uid}
-      })
-      const users = await this.userRepository.findOne({where:{userUUID:device?.user_uid},relations:["team"]});
-       
-      console.log("users_team", users.team);
-      device["organizationDetails"] = organizationDetails;
-      device["organizationTeam"] = users.team;
+        where: { id: device.organization_uid },
+      });
+      const users = await this.userRepository.findOne({
+        where: { userUUID: device?.user_uid },
+        relations: ['team'],
+      });
+
+      console.log('users_team', users.team);
+      device['organizationDetails'] = organizationDetails;
+      device['organizationTeam'] = users.team;
       console.log(device);
 
       return device;
@@ -830,11 +1057,9 @@ export class OnboardingService {
 
       // Fetch the user config from the database
       let userConfig = await this.devicesRepository.findOne({
-        where: { device_uid: deviceId}
+        where: { device_uid: deviceId },
       });
-      this.logger.log(
-        `device_config: ${userConfig}`
-      )
+      this.logger.log(`device_config: ${userConfig}`);
       if (!userConfig) {
         this.logger.warn(
           `User config not found for device ${deviceId} and organization ${organizationId}`,
@@ -1189,25 +1414,32 @@ export class OnboardingService {
   }
 
   async createPolicy(createPolicyDto: TrackingPolicyDTO): Promise<Policy> {
-    const { organizationId, policyName, screenshotInterval, teamId } = createPolicyDto;
-  
+    const { organizationId, policyName, screenshotInterval, teamId } =
+      createPolicyDto;
+
     try {
       // Step 1: Validate and fetch related entities
-      const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+      const organization = await this.organizationRepository.findOne({
+        where: { id: organizationId },
+      });
       if (!organization) {
-        throw new NotFoundException(`Organization with ID ${organizationId} not found`);
+        throw new NotFoundException(
+          `Organization with ID ${organizationId} not found`,
+        );
       }
-  
+
       const team = await this.teamRepository.findOne({ where: { id: teamId } });
       if (!team) {
         throw new NotFoundException(`Team with ID ${teamId} not found`);
       }
-  
-      const users = await this.userRepository.find({ where: { teamId: team.id } });
+
+      const users = await this.userRepository.find({
+        where: { teamId: team.id },
+      });
       // if (users.length === 0) {
       //   throw new NotFoundException(`No users found for team ID ${teamId}`);
       // }
-  
+
       // Step 2: Create the policy
       const policy = this.policyRepository.create({
         policyName,
@@ -1215,42 +1447,41 @@ export class OnboardingService {
         organization,
       });
       await this.policyRepository.save(policy);
-  
+
       // Step 3: Assign team and users to the policy
       const teamCreate = this.PolicyTeamRepository.create({
-        policy:policy,
-        team:team,
-      })
+        policy: policy,
+        team: team,
+      });
       await this.PolicyTeamRepository.save(teamCreate);
-      
-      if(users?.length){
+
+      if (users?.length) {
         const policyUsers = users?.map((user) => ({
           policy,
           user,
         }));
         await this.PolicyUserRepository.save(policyUsers);
       }
-  
+
       // Step 4: Create related settings
       const screenShotsSettings = this.ScreenshotSetRepository.create({
         policy,
-        blurScreenshotsStatus:false,
-        monitoringStatus:true,
-        organization_id:policy?.organization?.id,
-        time_interval:2
-      }
-      )
+        blurScreenshotsStatus: false,
+        monitoringStatus: true,
+        organization_id: policy?.organization?.id,
+        time_interval: 2,
+      });
       await this.ScreenshotSetRepository.save(screenShotsSettings);
-  
+
       const holidays = holidayList.map((holiday) => ({
-          holiday_date:holiday?.date,
-          holiday_name: holiday.dayName,
-          day_status: true,
-          holidayDate: holiday.date,
-          policy
-        }))
+        holiday_date: holiday?.date,
+        holiday_name: holiday.dayName,
+        day_status: true,
+        holidayDate: holiday.date,
+        policy,
+      }));
       await this.TrackHolidaysRepository.save(holidays);
-  
+
       const weekdays = weekdayData.map((day) => ({
         policy,
         day_uuid: day.day_uuid,
@@ -1262,7 +1493,7 @@ export class OnboardingService {
         break_end: this.convertTimeToMinutes(day.break_end),
       }));
       await this.TrackWeedaysRepository.save(weekdays);
-  
+
       // Step 5: Return the complete policy with relations
       return await this.policyRepository.findOne({
         where: { policyId: policy?.policyId },
@@ -1273,13 +1504,14 @@ export class OnboardingService {
           'holidays',
           'weekdays',
         ],
-      }); 
+      });
     } catch (error) {
       // Handle any errors
-      throw new BadRequestException(`Failed to create policy: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to create policy: ${error.message}`,
+      );
     }
   }
-  
 
   convertTimeToMinutes(time: number): number {
     const hours = Math.floor(time / 100); // Extract hours (HH part)
@@ -1291,7 +1523,7 @@ export class OnboardingService {
     if (!policies.length) {
       return policies;
     }
-  
+
     const updatedPolicies = await Promise.all(
       policies.map(async (pol) => {
         pol['team'] = 0;
@@ -1300,7 +1532,7 @@ export class OnboardingService {
         pol['trackedWeekdays'] = weekdayData.length || 7;
         pol['productivityItems'] = '46';
         pol['screenshotInterval'] = 1;
-  
+
         // Get team and user count for each policy
         const team = await this.PolicyTeamRepository.find({
           where: {
@@ -1312,45 +1544,44 @@ export class OnboardingService {
         // console.log(team)
         const user = await this.PolicyUserRepository.find({
           where: {
-            policy:{policyId:pol.policyId},
+            policy: { policyId: pol.policyId },
             user: Not(IsNull()), // Only include records where the user is not null
           },
           relations: ['user'], // Ensure user details are loaded
         });
-  
+
         const screenshotTiming = await this.ScreenshotSetRepository.findOne({
           where: { policy: { policyId: pol?.policyId } },
         });
-  
+
         const trackWeekDays = await this.TrackWeedaysRepository.find({
           where: { policy: { policyId: pol?.policyId } },
         });
-  
+
         const trackHoliDays = await this.TrackHolidaysRepository.find({
           where: { policy: { policyId: pol?.policyId } },
         });
-  
+
         console.log('team', team);
         console.log('trackWeekdays', trackWeekDays?.length);
         console.log('trackHolidays', trackHoliDays?.length);
         console.log('teamLength', team?.length);
         console.log('userLength', user?.length);
         console.log('screenshotInterval', screenshotTiming?.time_interval);
-  
+
         // Update the policy object with the fetched data
         pol['team'] = team?.length;
         pol['user'] = user?.length;
         pol['trackedHolidays'] = trackHoliDays?.length;
         pol['trackedWeekdays'] = trackWeekDays?.length;
         pol['screenshotInterval'] = screenshotTiming?.time_interval || 1;
-  
+
         return pol;
       }),
     );
-  
+
     return updatedPolicies;
   }
-  
 
   // Update a policy
   async updatePolicy(
@@ -1394,7 +1625,7 @@ export class OnboardingService {
   }
 
   // Fetch a single policy
-  async getPolicyById(policyId: string){
+  async getPolicyById(policyId: string) {
     const policy = await this.policyRepository.findOne({
       where: { policyId },
     });
@@ -1425,9 +1656,12 @@ export class OnboardingService {
       where: { policy: { policyId: policy?.policyId } },
     });
 
-
-    const assingUser = await this.PolicyUserRepository.find({where:{policy:{policyId:policy?.policyId}}});
-    const assignTeam = await this.PolicyTeamRepository.find({where:{policy:{policyId:policy?.policyId}}});
+    const assingUser = await this.PolicyUserRepository.find({
+      where: { policy: { policyId: policy?.policyId } },
+    });
+    const assignTeam = await this.PolicyTeamRepository.find({
+      where: { policy: { policyId: policy?.policyId } },
+    });
 
     // const ScreenShotSettings = await this.ScreenshotSetRepository.findOne({where:{policy:{policyId:policy?.policyId}}})
     // console.log(ScreenShotSettings)
@@ -1445,39 +1679,42 @@ export class OnboardingService {
 
     return policy;
   }
- async getPolicyTeamAndUser(policyId: string): Promise<Policy>{
-  console.log("Policy_id",policyId);
-  const policy = await this.policyRepository.findOne({
-    where: { policyId },
-    relations: [
-      'assignedTeams',          // Loads PolicyTeams entities
-      'assignedTeams.team',     // Loads Team data within each PolicyTeam
-      'assignedUsers',          // Loads PolicyUsers entities
-      'assignedUsers.user'      // Loads User data within each PolicyUser
-    ],
-  });
-  console.log("Policy",policy);
+  async getPolicyTeamAndUser(policyId: string): Promise<Policy> {
+    console.log('Policy_id', policyId);
+    const policy = await this.policyRepository.findOne({
+      where: { policyId },
+      relations: [
+        'assignedTeams', // Loads PolicyTeams entities
+        'assignedTeams.team', // Loads Team data within each PolicyTeam
+        'assignedUsers', // Loads PolicyUsers entities
+        'assignedUsers.user', // Loads User data within each PolicyUser
+      ],
+    });
+    console.log('Policy', policy);
 
-  // let policyTeam = await this.PolicyTeamRepository.find({
-  //   where:{policy:{policyId:policy?.policyId},
-  // }});
-  // const user = await this.PolicyUserRepository.find({where:{policy:{policyId:policy?.policyId}}});
-   
-  // policy["assignedUsers"] = user;
-  // console.log(user)
-  // policy["assignedUsers"] = user;
-  // policy["assignedTeams"] = policyTeam;
-  return policy;
- }
+    // let policyTeam = await this.PolicyTeamRepository.find({
+    //   where:{policy:{policyId:policy?.policyId},
+    // }});
+    // const user = await this.PolicyUserRepository.find({where:{policy:{policyId:policy?.policyId}}});
 
- async getUserPolicyData(organId:string,userId:string):Promise<Policy[]>{
-  // let policy = await this.policyRepository.find({where:{organization:{id:organId}}});
-  console.log(organId,userId);
-  let policyUsersList = await this.policyRepository.find({where:{organization:{id:organId}},relations:["assignedUsers"]})
-  console.log("policyUsersList",policyUsersList)
-  return policyUsersList;
-  // return policyUsersList; 
- }
+    // policy["assignedUsers"] = user;
+    // console.log(user)
+    // policy["assignedUsers"] = user;
+    // policy["assignedTeams"] = policyTeam;
+    return policy;
+  }
+
+  async getUserPolicyData(organId: string, userId: string): Promise<Policy[]> {
+    // let policy = await this.policyRepository.find({where:{organization:{id:organId}}});
+    console.log(organId, userId);
+    let policyUsersList = await this.policyRepository.find({
+      where: { organization: { id: organId } },
+      relations: ['assignedUsers'],
+    });
+    console.log('policyUsersList', policyUsersList);
+    return policyUsersList;
+    // return policyUsersList;
+  }
   async finalResponseData(
     userConfig: TrackTimeStatus,
     device: string,
@@ -1557,86 +1794,99 @@ export class OnboardingService {
     return newPolicy;
   }
   async updatePolicyUserAndTeam(
-    policyId:string,
-    teamId:string,
-    userId:string,
-  ){
-    const isPolicyExist = await this.policyRepository.findOne({where:{policyId:policyId}});
-    if(!isPolicyExist) {
-      throw new NotFoundException(`policy doesn't exist for  policy ${policyId}.`);
+    policyId: string,
+    teamId: string,
+    userId: string,
+  ) {
+    const isPolicyExist = await this.policyRepository.findOne({
+      where: { policyId: policyId },
+    });
+    if (!isPolicyExist) {
+      throw new NotFoundException(
+        `policy doesn't exist for  policy ${policyId}.`,
+      );
     }
-    const isteamExist = await this.teamRepository.findOne({where:{id:teamId}});
-    if(!isteamExist ) {
+    const isteamExist = await this.teamRepository.findOne({
+      where: { id: teamId },
+    });
+    if (!isteamExist) {
       throw new NotFoundException(`team does't exist for  policy ${policyId}.`);
     }
-    const isUserExist = await this.userRepository.findOne({where:{userUUID:userId}});
-    if( userId && !isUserExist ) {
-      throw new NotFoundException(`User doesn't exist for  policy ${policyId}.`);
-    }
-    
-    const teamInPolicyExist = await this.PolicyTeamRepository.findOne({where:{team:{id:isteamExist?.id}},
-    relations:["team"]
+    const isUserExist = await this.userRepository.findOne({
+      where: { userUUID: userId },
     });
-    console.log("teamInPolicyExist",teamInPolicyExist);
-    
-    if(teamInPolicyExist && teamInPolicyExist?.team){
+    if (userId && !isUserExist) {
+      throw new NotFoundException(
+        `User doesn't exist for  policy ${policyId}.`,
+      );
+    }
+
+    const teamInPolicyExist = await this.PolicyTeamRepository.findOne({
+      where: { team: { id: isteamExist?.id } },
+      relations: ['team'],
+    });
+    console.log('teamInPolicyExist', teamInPolicyExist);
+
+    if (teamInPolicyExist && teamInPolicyExist?.team) {
       return isPolicyExist;
     }
-    
+
     const team = this.PolicyTeamRepository.create({
-      policy:{policyId:isPolicyExist?.policyId},
-      team:{id:isteamExist?.id}
-    })
+      policy: { policyId: isPolicyExist?.policyId },
+      team: { id: isteamExist?.id },
+    });
 
     await this.PolicyTeamRepository.save(team);
-    
-    const userInPolicyiExist = await this.PolicyUserRepository.findOne({where:{user:{userUUID:isUserExist?.userUUID}},
-    relations:["user"]
-    });
-    
-    console.log("userInPolicyiExist",userInPolicyiExist);
 
-    
-    if(userInPolicyiExist && userInPolicyiExist?.user){
+    const userInPolicyiExist = await this.PolicyUserRepository.findOne({
+      where: { user: { userUUID: isUserExist?.userUUID } },
+      relations: ['user'],
+    });
+
+    console.log('userInPolicyiExist', userInPolicyiExist);
+
+    if (userInPolicyiExist && userInPolicyiExist?.user) {
       return isPolicyExist;
     }
     const user = this.PolicyUserRepository.create({
-      policy:{policyId:isPolicyExist?.policyId},
-      user:{userUUID:isUserExist?.userUUID}
-    })
-    
+      policy: { policyId: isPolicyExist?.policyId },
+      user: { userUUID: isUserExist?.userUUID },
+    });
+
     await this.PolicyUserRepository.save(user);
     return isPolicyExist;
   }
   async updateScreenShotSettings(
-    policyId:string,
-    screenshot_id:string,
-    blurScreenshotsStatus :boolean,
-    time_interval:number,
-    screenshot_monitoring:boolean
-  ):Promise<ScreenshotSettings>{
-    const policy = await this.policyRepository.findOne({where:{policyId:policyId},
-    relations:[
-      "ScreenshotSettings",
-    ]});
-    console.log(policy)
-    if(!policy?.policyId){
+    policyId: string,
+    screenshot_id: string,
+    blurScreenshotsStatus: boolean,
+    time_interval: number,
+    screenshot_monitoring: boolean,
+  ): Promise<ScreenshotSettings> {
+    const policy = await this.policyRepository.findOne({
+      where: { policyId: policyId },
+      relations: ['ScreenshotSettings'],
+    });
+    console.log(policy);
+    if (!policy?.policyId) {
       throw new NotFoundException(`Policy with ID ${policyId} not found.`);
     }
     // const screenshotSeetings = await this.ScreenshotSetRepository.findOne({where:{policy:{policyId:policy?.policyId}},relations:["policy"]});
-    const screenshotSeetings = await this.ScreenshotSetRepository.findOne({where:{organization_id:policy?.organization?.id},relations:["policy"]});
-    // let newScreenshotSetings = await  
-    screenshotSeetings.blurScreenshotsStatus = blurScreenshotsStatus,
-    screenshotSeetings.time_interval = time_interval,
-    screenshotSeetings.monitoringStatus = screenshot_monitoring,
-     
-    await this.ScreenshotSetRepository.save(screenshotSeetings);
-    
-    console.log("screenshotSeetings",screenshotSeetings);
-    console.log("policy",policy);
+    const screenshotSeetings = await this.ScreenshotSetRepository.findOne({
+      where: { organization_id: policy?.organization?.id },
+      relations: ['policy'],
+    });
+    // let newScreenshotSetings = await
+    (screenshotSeetings.blurScreenshotsStatus = blurScreenshotsStatus),
+      (screenshotSeetings.time_interval = time_interval),
+      (screenshotSeetings.monitoringStatus = screenshot_monitoring),
+      await this.ScreenshotSetRepository.save(screenshotSeetings);
+
+    console.log('screenshotSeetings', screenshotSeetings);
+    console.log('policy', policy);
 
     return screenshotSeetings;
-  } 
+  }
   async deletePolicy(policyId: string) {
     // Step 1: Find the policy to ensure it exists
     const policy = await this.policyRepository.findOne({ where: { policyId } });
@@ -1644,11 +1894,11 @@ export class OnboardingService {
     if (!policy) {
       throw new NotFoundException(`Policy with ID ${policyId} not found.`);
     }
-    this.logger.log("policy name: " + policy?.policyName)
+    this.logger.log('policy name: ' + policy?.policyName);
     // Deleting ScreenshotSettings related to the policy
     await this.ScreenshotSetRepository.delete({ policy: { policyId } });
 
-    // Deleting Tracked Weekdays related to the policy 
+    // Deleting Tracked Weekdays related to the policy
     await this.TrackWeedaysRepository.delete({ policy: { policyId } });
 
     // Deleting Tracked Holidays related to the policy
@@ -1667,7 +1917,7 @@ export class OnboardingService {
   async findTimeForPaidUsers(deviceId: string): Promise<number> {
     // Find the user associated with the device
     const userDevice = await this.devicesRepository.findOne({
-      where: { device_uid: deviceId }
+      where: { device_uid: deviceId },
     });
 
     if (!userDevice) {
@@ -1694,11 +1944,11 @@ export class OnboardingService {
     // Return the screenshot interval if found; otherwise, default to 2
     return screenshotInterval?.time_interval || 2;
   }
-  async findBlurScreenshotStatus(deviceId: string): Promise<boolean>{
+  async findBlurScreenshotStatus(deviceId: string): Promise<boolean> {
     const userDevice = await this.devicesRepository.findOne({
-      where: { device_uid: deviceId }
+      where: { device_uid: deviceId },
     });
-    console.log("device",userDevice)
+    console.log('device', userDevice);
     if (!userDevice) {
       // If no user is found, return the default interval (e.g., 2)
       return false;
@@ -1709,7 +1959,7 @@ export class OnboardingService {
       where: { user: { userUUID: userDevice?.user_uid } },
       relations: ['policy'], // Load the policy relation
     });
-    console.log("policyUser",policyUser)
+    console.log('policyUser', policyUser);
 
     if (!policyUser || !policyUser.policy) {
       // If no policy is found, return the default interval (e.g., 2)
@@ -1720,10 +1970,8 @@ export class OnboardingService {
     const screenshotInterval = await this.ScreenshotSetRepository.findOne({
       where: { policy: { policyId: policyUser?.policy?.policyId } },
     });
-    console.log("Screenshot",screenshotInterval)
+    console.log('Screenshot', screenshotInterval);
 
     return screenshotInterval?.blurScreenshotsStatus || false;
   }
-
 }
-  

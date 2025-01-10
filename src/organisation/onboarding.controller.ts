@@ -17,7 +17,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
+import { DeployFlaskBaseApi, LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
@@ -134,12 +134,10 @@ export class OnboardingController {
       }
 
       const images = await this.onboardingService.fetchScreenShot();
-      const userData =
-        await this.onboardingService.getAllUserActivityData(OrganizationId);
-      const getUsersInDb =
-        await this.onboardingService.findAllDevices(OrganizationId);
-      console.log('images', images);
-      console.log('userData', userData);
+      const userData = await this.onboardingService.getAllUserActivityData(OrganizationId);
+      const getUsersInDb = await this.onboardingService.findAllDevices(OrganizationId);
+      // console.log('images', images);
+      // console.log('userData', userData);
       // console.log(userData);
       let finalData = userData.map((user) => {
         // console.log(user);
@@ -151,7 +149,7 @@ export class OnboardingController {
           if (user?.activity_uuid === imgUrlExtracted) {
             user['ImgData'] = image;
           }
-          console.log(user['ImgData']);
+          // console.log(user['ImgData']);
         });
 
         getUsersInDb.forEach((u) => {
@@ -161,7 +159,7 @@ export class OnboardingController {
         });
         return user;
       });
-      console.log('finalData', finalData);
+      // console.log('finalData', finalData);
       res.status(200).json(finalData);
     } catch (error) {
       res.status(400).json({
@@ -695,42 +693,56 @@ export class OnboardingController {
     @Req() req: Request,
     @Res() res: Response,
     @Param('userId') userId: string,
-    @Query('from') fromTime: string
+    @Query('from') fromTime: string,
   ): Promise<any> {
     try {
       // Validate the 'from' date
       if (!fromTime || isNaN(Date.parse(fromTime))) {
-        return res.status(400).json({ error: 'Invalid or missing `from` date. Use YYYY-MM-DD format.' });
+        return res
+          .status(400)
+          .json({
+            error: 'Invalid or missing `from` date. Use YYYY-MM-DD format.',
+          });
       }
 
       // Retrieve the organization admin ID from headers
       const organizationAdminId = req.headers['organizationAdminId'] as string;
       if (!organizationAdminId) {
-        return res.status(400).json({ error: 'Missing organizationAdminId header.' });
+        return res
+          .status(400)
+          .json({ error: 'Missing organizationAdminId header.' });
       }
 
       // Find organization by admin ID
-      const organization = await this.organizationAdminService.findOrganizationById(organizationAdminId);
+      const organization =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminId,
+        );
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found.' });
       }
 
       // Validate the user/device
-      const requestingUser = await this.onboardingService.validateDeviceById(userId);
+      const requestingUser =
+        await this.onboardingService.validateDeviceById(userId);
       if (!requestingUser) {
         return res.status(404).json({ error: 'User or device not found.' });
       }
 
       // Fetch productivity data from Flask API
-      const flaskUrl = `${LocalFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
+      const flaskUrl = `${DeployFlaskBaseApi}/getUserProductivity/${requestingUser.device_uid}`;
       const flaskResponse = await axios.get(flaskUrl, {
         params: { from: fromTime },
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
 
       // Check if Flask response is valid
       if (!flaskResponse || !flaskResponse.data) {
-        return res.status(500).json({ error: 'Failed to retrieve data from productivity service.' });
+        return res
+          .status(500)
+          .json({
+            error: 'Failed to retrieve data from productivity service.',
+          });
       }
 
       // Return the response from Flask to the frontend
@@ -741,11 +753,56 @@ export class OnboardingController {
       // Handle specific axios errors
       if (axios.isAxiosError(error)) {
         return res.status(error.response?.status || 500).json({
-          error: error.response?.data || 'Error communicating with the productivity service.'
+          error:
+            error.response?.data ||
+            'Error communicating with the productivity service.',
         });
       }
 
       return res.status(500).json({ error: 'Internal server error.' });
+    }
+  }
+
+  @Get('/getActivitTimeSheetData')
+  async ActivityTimeSHeetData(
+    @Res() res: Response,
+    @Req() req: Request,
+    @Query('from') fromTime: string,
+  ): Promise<Response> {
+
+    // setp 1:- get the organizationId & from date if not then use the today's date 
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    if (!organizationAdminIdString) {
+      return res
+        .status(400)
+        .json({ message: 'Organization Admin ID is required' });
+    }
+
+    try {
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+      // step2: gather the data of the userActivity of the organization later on we all separe them with user.
+      const userActivityData = await this.onboardingService.getAllUserActivityData(OrganizationId);
+       
+      // step3: get the user data formated according to teh given data
+      const timeSheetData = await this.onboardingService.getTimeSheetData(userActivityData,fromTime,OrganizationId)
+      
+      return res.status(200).json({timeSheetData});
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to fetch user details',
+        error: error.message,
+      });
     }
   }
 
