@@ -209,8 +209,12 @@ export class OnboardingService {
       organization_id: organizationId,
       full_day_active_time: 8,
       full_day_core_productive_time: 4,
+      full_day_productive_time:2,
+      full_day_idle_productive_time:2,
       half_day_active_time: 4,
       half_day_core_productive_time: 2,
+      half_day_productive_time:1,
+      half_day_idle_productive_time:1,
     });
     await this.calculatedLogicRepository.save(calculatedLogic);
 
@@ -307,6 +311,10 @@ export class OnboardingService {
       console.log('Error fetching app usage statics', error);
       throw new Error('Failed to fetch app usage statics');
     }
+  }
+
+  async getCalculatedLogic (organId:string):Promise<CalculatedLogic> {
+    return await this.calculatedLogicRepository.findOne({where:{organization_id:organId}});
   }
 
   private calculatePercentages = (
@@ -1387,21 +1395,26 @@ export class OnboardingService {
         organization_id: organization?.id,
         full_day_active_time: data.fullDayActiveTime,
         full_day_core_productive_time: data.fullDayCoreProductiveTime,
+        full_day_productive_time: data.fullDayProductiveTime,
+        full_day_idle_productive_time: data.fullDayIdleTime,
         half_day_active_time: data.halfDayActiveTime,
         half_day_core_productive_time: data.halfDayCoreProductiveTime,
+        half_day_productive_time: data.halfDayProductiveTime,
+        half_day_idle_productive_time: data.halfDayIdleTime,
       });
       return this.calculatedLogicRepository.save(calculatedLogic);
     }
     console.log(data);
-    if (data.fullDayCoreProductiveTime && data.halfDayActiveTime) {
-      isExistCalculatedLogic.full_day_active_time = data.fullDayActiveTime;
-      isExistCalculatedLogic.full_day_core_productive_time =
-        data.fullDayCoreProductiveTime;
-      isExistCalculatedLogic.half_day_active_time = data.halfDayActiveTime;
-      isExistCalculatedLogic.half_day_core_productive_time =
-        data.halfDayCoreProductiveTime;
-    }
-
+    // if (data.fullDayActiveTime && data.halfDayActiveTime) {
+        isExistCalculatedLogic.full_day_active_time = data.fullDayActiveTime
+        isExistCalculatedLogic.full_day_core_productive_time = data.fullDayCoreProductiveTime,
+        isExistCalculatedLogic.full_day_productive_time = data.fullDayProductiveTime,
+        isExistCalculatedLogic.full_day_idle_productive_time = data.fullDayIdleTime,
+        isExistCalculatedLogic.half_day_active_time = data.halfDayActiveTime,
+        isExistCalculatedLogic.half_day_core_productive_time = data.halfDayCoreProductiveTime,
+        isExistCalculatedLogic.half_day_productive_time = data.halfDayProductiveTime,
+        isExistCalculatedLogic.half_day_idle_productive_time = data.halfDayIdleTime
+    // }
     return this.calculatedLogicRepository.save(isExistCalculatedLogic);
   }
 

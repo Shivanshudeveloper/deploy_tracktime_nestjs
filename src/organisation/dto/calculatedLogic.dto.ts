@@ -6,12 +6,23 @@ export class CreateCalculatedLogicDto {
 
   @IsNumber()
   fullDayCoreProductiveTime: number;
+  
+  @IsNumber()
+  fullDayProductiveTime: number;
+
+  @IsNumber()
+  fullDayIdleTime: number;
 
   @IsNumber()
   halfDayActiveTime: number;
 
   @IsNumber()
   halfDayCoreProductiveTime: number;
+
+  @IsNumber()
+  halfDayProductiveTime: number;
+  
+  @IsNumber()
+  halfDayIdleTime: number;
   
 }
-

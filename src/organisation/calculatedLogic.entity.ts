@@ -15,10 +15,22 @@ export class CalculatedLogic {
   full_day_core_productive_time: number;
 
   @Column('decimal')
+  full_day_idle_productive_time: number;
+
+  @Column('decimal')
+  full_day_productive_time: number;
+
+  @Column('decimal')
   half_day_active_time: number;
 
   @Column('decimal')
   half_day_core_productive_time: number;
+
+  @Column('decimal')
+  half_day_idle_productive_time: number;
+
+  @Column('decimal')
+  half_day_productive_time: number;
 
   @CreateDateColumn({name:"created_at"})
   created_at: Date;

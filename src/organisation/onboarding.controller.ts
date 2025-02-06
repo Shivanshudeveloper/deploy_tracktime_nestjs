@@ -1257,7 +1257,7 @@ export class OnboardingController {
 
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found !!' });
-      }
+      } 
 
       const { filetype } = req.query;
       const pkgFolderPath = path.join(
@@ -1410,6 +1410,36 @@ export class OnboardingController {
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to fetch organization data',
+        error: error.message,
+      });
+    }
+  }
+
+  @Get("/calculatedLogic")
+  async getCalculatedLogic(
+    @Res() res:Response,
+    @Req() req:Request
+  ){
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      const organization =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      const calculatedLogic = await this.onboardingService.getCalculatedLogic(organization);
+      return res.status(200).json(calculatedLogic);
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to fetch calculated logic',
         error: error.message,
       });
     }
