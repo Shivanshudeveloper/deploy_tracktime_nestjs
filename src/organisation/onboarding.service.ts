@@ -133,7 +133,7 @@ const weekdayData = [
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
 export const DeployFlaskBaseApi =
-  'https://python-link-classification-ekpw.onrender.com';
+  'https://python-link-classification-mqvu.onrender.com';
 
 export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
@@ -991,7 +991,8 @@ export class OnboardingService {
       console.log('isExist', isExist);
       if (
         isExist?.user_name &&
-        isExist?.user_name.toLowerCase() === device_user_name.toLowerCase()
+        // isExist?.user_name.toLowerCase() ===
+         device_user_name.toLowerCase()
       ) {
         return isExist?.device_uid;
       }
