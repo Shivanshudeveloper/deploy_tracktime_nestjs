@@ -1247,7 +1247,9 @@ export class OnboardingService {
     const calculatedLogic = await this.calculatedLogicRepository.findOne({
       where: { organization_id: organizationId },
     });
+
     console.log('calculatedLogic', calculatedLogic);
+
     if (!calculatedLogic) {
       throw new NotFoundException(
         'CalculatedLogic not found for the organization',
@@ -1280,6 +1282,7 @@ export class OnboardingService {
       const recordsOfWeek: any[] = [];
 
       const days = this.getDateRange(fromDate, toDate);
+
       for (const day of days) {
         const activitiesOfDay = userActivities.filter(
           (activity) =>
@@ -1311,7 +1314,7 @@ export class OnboardingService {
 
           if (workDuration >= calculatedLogic.full_day_active_time) {
             status = 'fullDay';
-          } else if (workDuration >= calculatedLogic.half_day_active_time) {
+          } else if (workDuration < calculatedLogic.full_day_active_time &&  workDuration >= calculatedLogic.half_day_active_time) {
             status = 'halfDay';
           }
         } else {
