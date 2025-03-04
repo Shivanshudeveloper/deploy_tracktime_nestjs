@@ -133,7 +133,7 @@ const weekdayData = [
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
 export const DeployFlaskBaseApi =
-  'https://python-link-classification-mqvu.onrender.com';
+  'https://python-url-classification-with-openai.onrender.com';
 
 export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
