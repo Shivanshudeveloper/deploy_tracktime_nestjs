@@ -1,4 +1,4 @@
-import { IsDecimal, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsDecimal, IsNotEmpty, IsNumber, IsString, IsOptional, IsIn } from 'class-validator';
 
 export class CreateCalculatedLogicDto {
   @IsNumber()
@@ -24,5 +24,10 @@ export class CreateCalculatedLogicDto {
   
   @IsNumber()
   halfDayIdleTime: number;
-  
+
+  // Add this new field
+  @IsOptional()
+  @IsString()
+  @IsIn(['coreProductivePlusProductive', 'activeTimePlusIdleTime', 'coreProductiveOnly', 'activeTimePlusIdleTimeAlt'])
+  timesheetCalculationLogic?: string;
 }

@@ -133,12 +133,12 @@ const weekdayData = [
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
 export const DeployFlaskBaseApi =
-  'https://python-url-classification-with-openai-3zyq.onrender.com';
+  'https://python-url-classification-with-openai-1zax.onrender.com';
 
 export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
 
-@Injectable()  
+@Injectable()
 export class OnboardingService {
   private s3: S3;
   // private flaskApiUrl = `${LocalFlaskBaseApi}/calculate_hourly_productivity?date=2024-06-28`; // Flask API URL
@@ -209,16 +209,73 @@ export class OnboardingService {
       organization_id: organizationId,
       full_day_active_time: 8,
       full_day_core_productive_time: 4,
-      full_day_productive_time:2,
-      full_day_idle_productive_time:2,
+      full_day_productive_time: 2,
+      full_day_idle_productive_time: 2,
       half_day_active_time: 4,
       half_day_core_productive_time: 2,
-      half_day_productive_time:1,
-      half_day_idle_productive_time:1,
+      half_day_productive_time: 1,
+      half_day_idle_productive_time: 1,
+      timesheet_calculation_logic: 'coreProductivePlusProductive', // Add this line
     });
     await this.calculatedLogicRepository.save(calculatedLogic);
 
     return true;
+  }
+
+  async createCalculatedLogic(
+    data: Partial<CreateCalculatedLogicDto>,
+    organizationId: string,
+  ): Promise<CalculatedLogic> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    console.log('organization', organization);
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    const isExistCalculatedLogic = await this.calculatedLogicRepository.findOne(
+      { where: { organization_id: organizationId } },
+    );
+    console.log('isExistCalculatedLogic', isExistCalculatedLogic);
+
+    if (!isExistCalculatedLogic?.id) {
+      console.log('data', data);
+      const calculatedLogic = this.calculatedLogicRepository.create({
+        organization_id: organization?.id,
+        full_day_active_time: data.fullDayActiveTime,
+        full_day_core_productive_time: data.fullDayCoreProductiveTime,
+        full_day_productive_time: data.fullDayProductiveTime,
+        full_day_idle_productive_time: data.fullDayIdleTime,
+        half_day_active_time: data.halfDayActiveTime,
+        half_day_core_productive_time: data.halfDayCoreProductiveTime,
+        half_day_productive_time: data.halfDayProductiveTime,
+        half_day_idle_productive_time: data.halfDayIdleTime,
+        timesheet_calculation_logic:
+          data.timesheetCalculationLogic || 'coreProductivePlusProductive', // Add this line
+      });
+      return this.calculatedLogicRepository.save(calculatedLogic);
+    }
+
+    console.log(data);
+    // Update existing record
+    isExistCalculatedLogic.full_day_active_time = data.fullDayActiveTime;
+    isExistCalculatedLogic.full_day_core_productive_time =
+      data.fullDayCoreProductiveTime;
+    isExistCalculatedLogic.full_day_productive_time =
+      data.fullDayProductiveTime;
+    isExistCalculatedLogic.full_day_idle_productive_time = data.fullDayIdleTime;
+    isExistCalculatedLogic.half_day_active_time = data.halfDayActiveTime;
+    isExistCalculatedLogic.half_day_core_productive_time =
+      data.halfDayCoreProductiveTime;
+    isExistCalculatedLogic.half_day_productive_time =
+      data.halfDayProductiveTime;
+    isExistCalculatedLogic.half_day_idle_productive_time = data.halfDayIdleTime;
+    isExistCalculatedLogic.timesheet_calculation_logic =
+      data.timesheetCalculationLogic ||
+      isExistCalculatedLogic.timesheet_calculation_logic; // Add this line
+
+    return this.calculatedLogicRepository.save(isExistCalculatedLogic);
   }
 
   async getLastestActivity(
@@ -313,8 +370,10 @@ export class OnboardingService {
     }
   }
 
-  async getCalculatedLogic (organId:string):Promise<CalculatedLogic> {
-    return await this.calculatedLogicRepository.findOne({where:{organization_id:organId}});
+  async getCalculatedLogic(organId: string): Promise<CalculatedLogic> {
+    return await this.calculatedLogicRepository.findOne({
+      where: { organization_id: organId },
+    });
   }
 
   private calculatePercentages = (
@@ -567,7 +626,7 @@ export class OnboardingService {
     });
   }
   // In your OnboardingService
-  async getUserDetails(
+  async getUserActivityDetails(
     organId: string,
     id: string,
     page: number,
@@ -580,6 +639,7 @@ export class OnboardingService {
     });
     // console.log('fetched data', FetchedData);
     const ImgData = await this.fetchScreenShot();
+    console.log({ imgData: 'ImgData.length' });
     const userData = await this.findAllDevices(organId);
 
     if (!FetchedData) {
@@ -686,9 +746,9 @@ export class OnboardingService {
     const devices = await this.devicesRepository.find({
       where: { organization_uid: organizationId },
     });
-  
+
     const deviceIds = devices.map((device) => device.device_uid);
-  
+
     // Filter activities based on device IDs and target date
     const targetDate = new Date(from);
     const filteredActivities = userActivities.filter(
@@ -696,43 +756,43 @@ export class OnboardingService {
         deviceIds.includes(activity.user_uid) &&
         this.isSameDay(new Date(activity.timestamp), targetDate),
     );
-  
+
     // Group activities by user/device
     const groupedByUser = this.groupByUser(filteredActivities);
-  
+
     // Process daily, weekly, and monthly data with devices list
-    const daily = this.calculateDaily(groupedByUser,devices);
+    const daily = this.calculateDaily(groupedByUser, devices);
     const weekly = this.calculateWeekly(groupedByUser, targetDate, devices);
     const monthly = this.calculateMonthly(groupedByUser, targetDate, devices);
-    
+
     return { daily, weekly, monthly };
   }
-  
+
   private calculateDaily(
     groupedActivities: Record<string, UserActivity[]>,
     devices: Devices[],
   ) {
-    return devices.map(({ device_uid, device_name ,user_name}) => {
+    return devices.map(({ device_uid, device_name, user_name }) => {
       const activities = groupedActivities[device_uid] || [];
-  
+
       if (activities.length === 0) {
         return {
           id: device_uid,
           name: user_name || device_name,
-          InTime: "00:00",
-          OutTime: "00:00",
-          WorkHour: "00:00",
+          InTime: '00:00',
+          OutTime: '00:00',
+          WorkHour: '00:00',
         };
       }
-  
+
       const sortedActivities = activities.sort(
         (a, b) =>
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
-  
+
       const inTime = sortedActivities[0].timestamp;
       const outTime = sortedActivities[sortedActivities.length - 1].timestamp;
-  
+
       return {
         id: device_uid,
         name: user_name || device_name,
@@ -750,30 +810,30 @@ export class OnboardingService {
   ) {
     let weekStart = new Date(targetDate);
     weekStart.setDate(weekStart.getDate() - 6);
-  
-    return devices.map(({ device_uid, device_name,user_name }) => {
+
+    return devices.map(({ device_uid, device_name, user_name }) => {
       const activities = groupedActivities[device_uid] || [];
-  
+
       if (activities.length === 0) {
         return {
           id: device_uid,
           name: user_name || device_name,
-          WorkHour: "00:00",
+          WorkHour: '00:00',
           WorkDays: 0,
         };
       }
-  
+
       const weeklyActivities = activities.filter((activity) => {
         const activityDate = new Date(activity.timestamp);
         return activityDate >= weekStart && activityDate <= targetDate;
       });
-  
+
       const daysWorked = new Set(
         weeklyActivities.map((activity) =>
           new Date(activity.timestamp).toDateString(),
         ),
       );
-  
+
       let totalWorkHours = 0;
       if (weeklyActivities.length > 1) {
         const allTimestamps = weeklyActivities.map((activity) =>
@@ -783,7 +843,7 @@ export class OnboardingService {
         const weekOutTime = Math.max(...allTimestamps);
         totalWorkHours = (weekOutTime - weekInTime) / (1000 * 60 * 60);
       }
-  
+
       return {
         id: device_uid,
         name: user_name || device_name,
@@ -803,30 +863,30 @@ export class OnboardingService {
       targetDate.getMonth(),
       1,
     );
-  
-    return devices.map(({ device_uid, device_name,user_name }) => {
+
+    return devices.map(({ device_uid, device_name, user_name }) => {
       const activities = groupedActivities[device_uid] || [];
-  
+
       if (activities.length === 0) {
         return {
           id: device_uid,
           name: user_name || device_name,
-          WorkHour: "00:00",
+          WorkHour: '00:00',
           WorkDays: 0,
         };
       }
-  
+
       const monthlyActivities = activities.filter((activity) => {
         const activityDate = new Date(activity.timestamp);
         return activityDate >= monthStart && activityDate <= targetDate;
       });
-  
+
       const daysWorked = new Set(
         monthlyActivities.map((activity) =>
           new Date(activity.timestamp).toDateString(),
         ),
       );
-  
+
       let totalWorkHours = 0;
       if (monthlyActivities.length > 1) {
         const allTimestamps = monthlyActivities.map((activity) =>
@@ -836,7 +896,7 @@ export class OnboardingService {
         const monthOutTime = Math.max(...allTimestamps);
         totalWorkHours = (monthOutTime - monthInTime) / (1000 * 60 * 60);
       }
-  
+
       return {
         id: device_uid,
         name: user_name || device_name,
@@ -926,7 +986,7 @@ export class OnboardingService {
 
     // Create the device for the user
     console.log(deviceName);
-    const deviceForUser = await this.devicesRepository.create({
+    const deviceForUser = this.devicesRepository.create({
       organization_uid,
       user_name: userName,
       user_uid: user_uid ? user_uid : null,
@@ -992,7 +1052,7 @@ export class OnboardingService {
       if (
         isExist?.user_name &&
         // isExist?.user_name.toLowerCase() ===
-         device_user_name.toLowerCase()
+        device_user_name.toLowerCase()
       ) {
         return isExist?.device_uid;
       }
@@ -1314,7 +1374,10 @@ export class OnboardingService {
 
           if (workDuration >= calculatedLogic.full_day_active_time) {
             status = 'fullDay';
-          } else if (workDuration < calculatedLogic.full_day_active_time &&  workDuration >= calculatedLogic.half_day_active_time) {
+          } else if (
+            workDuration < calculatedLogic.full_day_active_time &&
+            workDuration >= calculatedLogic.half_day_active_time
+          ) {
             status = 'halfDay';
           }
         } else {
@@ -1377,50 +1440,6 @@ export class OnboardingService {
     return day === 0 || day === 6;
   }
 
-  async createCalculatedLogic(
-    data: Partial<CreateCalculatedLogicDto>,
-    organizationId: string,
-  ): Promise<CalculatedLogic> {
-    const organization = await this.organizationRepository.findOne({
-      where: { id: organizationId },
-    });
-    console.log('organization', organization);
-    if (!organization) {
-      throw new NotFoundException('Organization not found');
-    }
-
-    const isExistCalculatedLogic = await this.calculatedLogicRepository.findOne(
-      { where: { organization_id: organizationId } },
-    );
-    console.log('isExistCalculatedLogic', isExistCalculatedLogic);
-    if (!isExistCalculatedLogic?.id) {
-      console.log('data', data);
-      const calculatedLogic = this.calculatedLogicRepository.create({
-        organization_id: organization?.id,
-        full_day_active_time: data.fullDayActiveTime,
-        full_day_core_productive_time: data.fullDayCoreProductiveTime,
-        full_day_productive_time: data.fullDayProductiveTime,
-        full_day_idle_productive_time: data.fullDayIdleTime,
-        half_day_active_time: data.halfDayActiveTime,
-        half_day_core_productive_time: data.halfDayCoreProductiveTime,
-        half_day_productive_time: data.halfDayProductiveTime,
-        half_day_idle_productive_time: data.halfDayIdleTime,
-      });
-      return this.calculatedLogicRepository.save(calculatedLogic);
-    }
-    console.log(data);
-    // if (data.fullDayActiveTime && data.halfDayActiveTime) {
-        isExistCalculatedLogic.full_day_active_time = data.fullDayActiveTime
-        isExistCalculatedLogic.full_day_core_productive_time = data.fullDayCoreProductiveTime,
-        isExistCalculatedLogic.full_day_productive_time = data.fullDayProductiveTime,
-        isExistCalculatedLogic.full_day_idle_productive_time = data.fullDayIdleTime,
-        isExistCalculatedLogic.half_day_active_time = data.halfDayActiveTime,
-        isExistCalculatedLogic.half_day_core_productive_time = data.halfDayCoreProductiveTime,
-        isExistCalculatedLogic.half_day_productive_time = data.halfDayProductiveTime,
-        isExistCalculatedLogic.half_day_idle_productive_time = data.halfDayIdleTime
-    // }
-    return this.calculatedLogicRepository.save(isExistCalculatedLogic);
-  }
 
   async getCalculatedLogicByOrganization(
     organizationId: string,
@@ -1980,7 +1999,7 @@ export class OnboardingService {
 
     if (!policyUser || !policyUser.policy) {
       // If no policy is found, return the default interval (e.g., 2)
-      return false;
+      return true;
     }
 
     // Fetch the policy details, specifically the screenshot interval

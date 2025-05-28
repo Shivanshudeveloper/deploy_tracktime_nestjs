@@ -1,4 +1,10 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('calculated_logic')
 export class CalculatedLogic {
@@ -32,10 +38,16 @@ export class CalculatedLogic {
   @Column('decimal')
   half_day_productive_time: number;
 
-  @CreateDateColumn({name:"created_at"})
+  @CreateDateColumn({ name: 'created_at' })
   created_at: Date;
 
-  @UpdateDateColumn({name:"updated_at"})
+  @UpdateDateColumn({ name: 'updated_at' })
   updated_at: Date;
+  
+  @Column({
+    type: 'varchar',
+    length: 100,
+    default: 'coreProductivePlusProductive',
+  })
+  timesheet_calculation_logic: string;
 }
-
