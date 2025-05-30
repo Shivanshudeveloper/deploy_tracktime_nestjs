@@ -1462,7 +1462,78 @@ async getCalculatedLogic(
     });
   }
 }
+@Post('organization/sendTeamInvite')
+async sendTeamInviteEmail(
+  @Body() body: { email: string; teamId: string; inviteUrl: string },
+  @Res() res: Response,
+  @Req() req: Request,
+): Promise<Response> {
+  try {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
 
+    if (!organizationAdminIdString) {
+      return res.status(400).json({ 
+        message: 'Organization Admin ID is required' 
+      });
+    }
+
+    const organizationId = await this.organizationAdminService.findOrganizationById(
+      organizationAdminIdString,
+    );
+
+    if (!organizationId) {
+      return res.status(404).json({ 
+        error: 'Organization not found' 
+      });
+    }
+
+    const { email, teamId, inviteUrl } = body;
+
+    if (!email || !teamId || !inviteUrl) {
+      return res.status(400).json({ 
+        message: 'Email, team ID, and invite URL are required' 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        message: 'Invalid email format' 
+      });
+    }
+
+    const emailSent = await this.onboardingService.sendTeamInviteEmail(
+      email,
+      teamId,
+      organizationId,
+      inviteUrl,
+    );
+
+    if (emailSent) {
+      return res.status(200).json({
+        message: 'Invitation email sent successfully!',
+        success: true,
+      });
+    } else {
+      return res.status(500).json({
+        message: 'Failed to send email. Please try again.',
+        success: false,
+      });
+    }
+
+  } catch (error) {
+    console.error('Send invite email error:', error);
+    return res.status(500).json({
+      message: 'Failed to send invitation email',
+      error: error.message,
+      success: false,
+    });
+  }
+}
   @Delete('/policy/delete/:policy_id')
   async deletePolicy(
     @Res() res: Response,

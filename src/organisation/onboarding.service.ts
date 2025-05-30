@@ -35,6 +35,7 @@ import { TrackingWeekdays } from './tracking_weekdays.entity';
 import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
 import { organizationAdminService } from './OrganizationAdmin.service';
 import { ProductivitySettingEntity } from './prodsetting.entity';
+import { Resend } from 'resend';
 
 export const holidayList = [
   // Indian Holidays
@@ -276,6 +277,91 @@ export class OnboardingService {
       isExistCalculatedLogic.timesheet_calculation_logic; // Add this line
 
     return this.calculatedLogicRepository.save(isExistCalculatedLogic);
+  }
+
+  async sendTeamInviteEmail(
+    email: string,
+    teamId: string,
+    organizationId: string,
+    inviteUrl: string,
+  ): Promise<boolean> {
+    try {
+      // Validate API key
+      if (!process.env.RESEND_API_KEY) {
+        throw new Error('Missing RESEND_API_KEY');
+      }
+
+      const resend = new Resend(process.env.RESEND_API_KEY);
+
+      // Fetch organization and team info
+      const organization = await this.organizationRepository.findOne({
+        where: { id: organizationId },
+      });
+      const team = await this.teamRepository.findOne({ where: { id: teamId } });
+
+      if (!organization || !team) {
+        throw new Error('Organization or team not found');
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Invalid email address format');
+      }
+
+      // Sanitize organization name for display
+      const sanitizedOrgName =
+        organization.name
+          .replace(/[<>@]/g, '')
+          .replace(/[^\w\s.-]/g, '')
+          .trim() || 'TrackTime';
+
+      // HTML Email
+      const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #333;">Welcome to ${sanitizedOrgName}!</h2>
+        <p>You've been invited to join the team: <strong>${team.name}</strong></p>
+        <p style="margin-top: 20px;">
+          <a href="${inviteUrl}" target="_blank" style="
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 4px;
+          ">Accept Your Invitation</a>
+        </p>
+        <p style="margin-top: 30px;">Best regards,<br/>${sanitizedOrgName} Team</p>
+      </div>
+    `;
+
+      // Plain-text fallback
+      const emailText = `
+Welcome to ${sanitizedOrgName}!
+
+You've been invited to join the team: ${team.name}
+
+Accept your invitation by visiting this link: ${inviteUrl}
+
+Best regards,
+${sanitizedOrgName} Team
+    `;
+
+      // Send the email
+      const data = await resend.emails.send({
+        from: `${sanitizedOrgName} <tracktime@syncsfer.com>`, // Make sure this is a verified sender
+        to: email, // Use string, not array
+        subject: `You're invited to join ${team.name} at ${sanitizedOrgName}`,
+        html: emailHtml,
+        text: emailText,
+      });
+
+      console.log('✅ Email sent successfully:', data);
+      return true;
+    } catch (error) {
+      console.error('❌ Email sending failed:', error);
+      return false;
+    }
   }
 
   async getLastestActivity(
@@ -1439,7 +1525,6 @@ export class OnboardingService {
     const day = date.getDay();
     return day === 0 || day === 6;
   }
-
 
   async getCalculatedLogicByOrganization(
     organizationId: string,
