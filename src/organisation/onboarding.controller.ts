@@ -17,7 +17,11 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { DeployFlaskBaseApi, LocalFlaskBaseApi, OnboardingService } from './onboarding.service';
+import {
+  DeployFlaskBaseApi,
+  LocalFlaskBaseApi,
+  OnboardingService,
+} from './onboarding.service';
 import { Organization } from './organisation.entity';
 import { DesktopApplication } from './desktop.entity';
 import { Team } from './team.entity';
@@ -101,7 +105,7 @@ export class OnboardingController {
       await this.organizationAdminService.updateUserOrganizationId(
         organizationAdminIdString,
         newOrganization?.id,
-      ); 
+      );
 
       return res.status(201).json({
         Error: 'Organization Created successfully !!',
@@ -134,8 +138,10 @@ export class OnboardingController {
       }
 
       const images = await this.onboardingService.fetchScreenShot();
-      const userData = await this.onboardingService.getAllUserActivityData(OrganizationId);
-      const getUsersInDb = await this.onboardingService.findAllDevices(OrganizationId);
+      const userData =
+        await this.onboardingService.getAllUserActivityData(OrganizationId);
+      const getUsersInDb =
+        await this.onboardingService.findAllDevices(OrganizationId);
       // console.log('images', images);
       // console.log('userData', userData);
       // console.log(userData);
@@ -341,43 +347,142 @@ export class OnboardingController {
       ? organizationAdminId[0]
       : organizationAdminId;
 
+    console.log('=== GET TEAM REQUEST ===');
+    console.log('Organization Admin ID:', organizationAdminIdString);
+
     try {
       if (!organizationAdminIdString) {
-        return res
-          .status(499)
-          .json({ message: 'Organization Admin ID is required' });
+        console.error('Missing Organization Admin ID');
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+        });
       }
 
-      // console.log('organizationAdminId', organizationAdminIdString);
       const OrganizationId =
         await this.organizationAdminService.findOrganizationById(
           organizationAdminIdString,
         );
 
-      if (!organizationAdminIdString) {
-        return res.status(404).json({ message: 'Organization is required' });
-      }
+      console.log('Organization ID found:', OrganizationId);
 
-      console.log('OrganizationId', OrganizationId);
-
-      let team =
-        await this.onboardingService.findAllTeamsForOrganization(
-          OrganizationId,
+      if (!OrganizationId) {
+        console.error(
+          'Organization not found for admin ID:',
+          organizationAdminIdString,
         );
-
-      // console.log('team', team);
-
-      if (!team.length) {
-        return res
-          .status(404)
-          .json({ message: 'No team in the organization Please create one!' });
+        return res.status(404).json({
+          message: 'Organization not found',
+        });
       }
 
-      return res.json({ team: team });
+      console.log('Fetching teams, devices, and users...');
+
+      // Fetch teams, devices, and users in parallel
+      const [teams, devices, users] = await Promise.all([
+        this.onboardingService.findAllTeamsForOrganization(OrganizationId),
+        this.onboardingService.findAllDevices(OrganizationId),
+        this.onboardingService.findAllUsers(OrganizationId),
+      ]);
+
+      console.log('Data fetched successfully:');
+      console.log('- Teams:', teams?.length || 0);
+      console.log('- Devices:', devices?.length || 0);
+      console.log('- Users:', users?.length || 0);
+
+      // Check if no teams exist
+      if (!teams || !teams.length) {
+        console.log('No teams found for organization');
+        return res.status(404).json({
+          message: 'No team in the organization Please create one!',
+          team: [],
+          devices: devices || [],
+          users: users || [],
+        });
+      }
+
+      // Process devices to include user information
+      const processedDevices = devices
+        ? devices.map((device) => {
+            const assignedUser = device.user_uid
+              ? users.find((user) => user.userUUID === device.user_uid)
+              : null;
+
+            return {
+              device_uid: device.device_uid,
+              device_name: device.device_name,
+              user_name: device.user_name,
+              user_uid: device.user_uid,
+              mac_address: device.mac_address,
+              organization_uid: device.organization_uid,
+              created_at: device.created_at,
+              updated_at: device.updated_at,
+              config: device.config,
+              // Add user details if assigned
+              assignedUser: assignedUser
+                ? {
+                    userUUID: assignedUser.userUUID,
+                    userName: assignedUser.userName,
+                    email: assignedUser.email,
+                    teamId: assignedUser.teamId,
+                  }
+                : null,
+            };
+          })
+        : [];
+
+      // Process users to include team information
+      const processedUsers = users
+        ? users.map((user) => {
+            const userTeam = teams.find((team) => team.id === user.teamId);
+
+            return {
+              userUUID: user.userUUID,
+              userName: user.userName,
+              email: user.email,
+              teamId: user.teamId,
+              organizationId: user.organizationId,
+              created_at: user.created_at,
+              updated_at: user.updated_at,
+              // Add team details
+              team: userTeam
+                ? {
+                    id: userTeam.id,
+                    name: userTeam.name,
+                    organizationId: userTeam.organizationId,
+                  }
+                : null,
+            };
+          })
+        : [];
+
+      const responseData = {
+        team: teams,
+        devices: processedDevices,
+        users: processedUsers,
+        summary: {
+          totalTeams: teams.length,
+          totalDevices: processedDevices.length,
+          totalUsers: processedUsers.length,
+          assignedDevices: processedDevices.filter((device) => device.user_uid)
+            .length,
+          unassignedDevices: processedDevices.filter(
+            (device) => !device.user_uid,
+          ).length,
+        },
+      };
+
+      console.log('Sending response with summary:', responseData.summary);
+      return res.status(200).json(responseData);
     } catch (err) {
-      return res
-        .status(500)
-        .json({ message: 'Failed to fetch users', error: err.message });
+      console.error('❌ Error in getTeam:', err);
+      console.error('Error stack:', err.stack);
+      return res.status(500).json({
+        message: 'Failed to fetch team data',
+        error: err.message,
+        team: [],
+        devices: [],
+        users: [],
+      });
     }
   }
 
@@ -698,11 +803,9 @@ export class OnboardingController {
     try {
       // Validate the 'from' date
       if (!fromTime || isNaN(Date.parse(fromTime))) {
-        return res
-          .status(400)
-          .json({
-            error: 'Invalid or missing `from` date. Use YYYY-MM-DD format.',
-          });
+        return res.status(400).json({
+          error: 'Invalid or missing `from` date. Use YYYY-MM-DD format.',
+        });
       }
 
       // Retrieve the organization admin ID from headers
@@ -738,17 +841,15 @@ export class OnboardingController {
 
       // Check if Flask response is valid
       if (!flaskResponse || !flaskResponse.data) {
-        return res
-          .status(500)
-          .json({
-            error: 'Failed to retrieve data from productivity service.',
-          });
+        return res.status(500).json({
+          error: 'Failed to retrieve data from productivity service.',
+        });
       }
 
       // Return the response from Flask to the frontend
 
-      console.log({"flaskData":flaskResponse.data});
-      
+      console.log({ flaskData: flaskResponse.data });
+
       return res.status(200).json(flaskResponse.data);
     } catch (error) {
       console.error('Error fetching productivity details:', error.message);
@@ -772,8 +873,7 @@ export class OnboardingController {
     @Req() req: Request,
     @Query('from') fromTime: string,
   ): Promise<Response> {
-
-    // setp 1:- get the organizationId & from date if not then use the today's date 
+    // setp 1:- get the organizationId & from date if not then use the today's date
     const organizationAdminId = req.headers['organizationAdminId'];
     const organizationAdminIdString = Array.isArray(organizationAdminId)
       ? organizationAdminId[0]
@@ -795,12 +895,17 @@ export class OnboardingController {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
       // step2: gather the data of the userActivity of the organization later on we all separe them with user.
-      const userActivityData = await this.onboardingService.getAllUserActivityData(OrganizationId);
-       
+      const userActivityData =
+        await this.onboardingService.getAllUserActivityData(OrganizationId);
+
       // step3: get the user data formated according to teh given data
-      const timeSheetData = await this.onboardingService.getTimeSheetData(userActivityData,fromTime,OrganizationId)
-      
-      return res.status(200).json({timeSheetData});
+      const timeSheetData = await this.onboardingService.getTimeSheetData(
+        userActivityData,
+        fromTime,
+        OrganizationId,
+      );
+
+      return res.status(200).json({ timeSheetData });
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to fetch user details',
@@ -866,49 +971,270 @@ export class OnboardingController {
     @Req() req: Request,
     @Res() res: Response,
     @Param('deviceId') deviceId: string,
-    @Query('user_id') userId: string,
+    @Body() body: { user_id?: string; email?: string } = {},
   ): Promise<any> {
     const organizationAdminId = req.headers['organizationAdminId'] as string;
-
     const organizationAdminIdString = Array.isArray(organizationAdminId)
       ? organizationAdminId[0]
       : organizationAdminId;
 
-    const OrganizationId =
-      await this.organizationAdminService.findOrganizationById(
-        organizationAdminIdString,
-      );
-
-    if (!OrganizationId) {
-      return res.status(404).json({ error: 'Organization not found !!' });
-    }
-    if (!userId || !deviceId) {
-      return res.status(404).json({ error: 'All fields are required !!' });
-    }
+    console.log('=== DEVICE ASSIGNMENT REQUEST ===');
+    console.log('Device ID:', deviceId);
+    console.log('Request Body:', body);
+    console.log('Query Params:', req.query);
+    console.log('Organization Admin ID:', organizationAdminIdString);
 
     try {
+      // Support both query parameter and body for backward compatibility
+      const userId = body?.user_id || (req.query.user_id as string);
+      const newEmail = body?.email?.trim();
+
+      console.log('Extracted User ID:', userId);
+      console.log('Extracted Email:', newEmail);
+
+      // Validate organization
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      console.log('Organization ID found:', OrganizationId);
+
+      if (!OrganizationId) {
+        console.error(
+          'Organization not found for admin ID:',
+          organizationAdminIdString,
+        );
+        return res.status(404).json({
+          error: 'Organization not found',
+          success: false,
+        });
+      }
+
+      // Validate required parameters
+      if (!userId || !deviceId) {
+        console.error(
+          'Missing required parameters - User ID:',
+          userId,
+          'Device ID:',
+          deviceId,
+        );
+        return res.status(400).json({
+          error: 'Device ID and User ID are required',
+          success: false,
+        });
+      }
+
+      console.log(
+        `Attempting to assign device ${deviceId} to user ${userId} in organization ${OrganizationId}`,
+      );
+      if (newEmail) {
+        console.log(`Also updating user email to: ${newEmail}`);
+      }
+
+      // Check if device exists and belongs to organization
+      const deviceToUpdate =
+        await this.onboardingService.validateDeviceById(deviceId);
+      console.log('Device found:', deviceToUpdate ? 'Yes' : 'No');
+
+      if (!deviceToUpdate?.device_uid) {
+        console.error('Device not found:', deviceId);
+        return res.status(404).json({
+          message: 'Device not found',
+          success: false,
+        });
+      }
+
+      // Check if device belongs to the organization
+      if (deviceToUpdate.organization_uid !== OrganizationId) {
+        console.error(
+          'Device does not belong to organization:',
+          deviceToUpdate.organization_uid,
+          'vs',
+          OrganizationId,
+        );
+        return res.status(403).json({
+          message: 'Device does not belong to this organization',
+          success: false,
+        });
+      }
+
+      // Check if user exists and belongs to organization
+      const userToAssign = await this.onboardingService.findUserById(userId);
+      console.log('User found:', userToAssign ? 'Yes' : 'No');
+
+      if (!userToAssign) {
+        console.error('User not found:', userId);
+        return res.status(404).json({
+          message: 'User not found',
+          success: false,
+        });
+      }
+
+      if (userToAssign.organizationId !== OrganizationId) {
+        console.error(
+          'User does not belong to organization:',
+          userToAssign.organizationId,
+          'vs',
+          OrganizationId,
+        );
+        return res.status(403).json({
+          message: 'User does not belong to this organization',
+          success: false,
+        });
+      }
+
+      // Handle previous user assignment (if any)
+      const previousUserId = deviceToUpdate.user_uid;
+      if (previousUserId && previousUserId !== userId) {
+        console.log(
+          `Device ${deviceId} was previously assigned to user ${previousUserId}`,
+        );
+      }
+
+      // Handle user assignment conflicts (remove user from other devices if needed)
+      console.log('Checking for existing user assignments...');
+      await this.onboardingService.validateUserIdLinked(userId, deviceId);
+
+      // Update device user assignment
+      console.log('Updating device assignment...');
+      deviceToUpdate.user_uid = userId;
+      const updatedDevice =
+        await this.onboardingService.updateDevice(deviceToUpdate);
+      console.log('Device updated successfully');
+
+      // Update user email if provided
+      let emailUpdated = false;
+      let updatedUser = userToAssign;
+
+      if (newEmail && newEmail !== userToAssign.email) {
+        console.log('Updating user email...');
+        emailUpdated = await this.onboardingService.updateUserEmail(
+          userId,
+          newEmail,
+        );
+        if (emailUpdated) {
+          updatedUser = await this.onboardingService.findUserById(userId); // Refresh user data
+          console.log(
+            `Successfully updated user ${userId} email to ${newEmail}`,
+          );
+        } else {
+          console.log('Failed to update user email');
+        }
+      }
+
+      console.log(
+        `✅ Successfully assigned device ${deviceId} to user ${userId}`,
+      );
+
+      const responseData = {
+        message: 'Device assigned to user successfully',
+        success: true,
+        data: {
+          device: {
+            device_uid: updatedDevice.device_uid,
+            device_name: updatedDevice.device_name,
+            user_uid: updatedDevice.user_uid,
+            organization_uid: updatedDevice.organization_uid,
+          },
+          assignedUser: {
+            userUUID: updatedUser.userUUID,
+            userName: updatedUser.userName,
+            email: updatedUser.email,
+            teamId: updatedUser.teamId,
+          },
+          previousAssignment: previousUserId !== userId ? previousUserId : null,
+          emailUpdated: emailUpdated,
+          newEmail: emailUpdated ? newEmail : null,
+        },
+      };
+
+      console.log('Sending response:', responseData);
+      return res.status(200).json(responseData);
+    } catch (error) {
+      console.error('❌ Error in updateDeviceUser:', error);
+      console.error('Error stack:', error.stack);
+      return res.status(500).json({
+        message: 'Failed to assign device to user',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  // Also add a method to unassign device from user
+  @Patch('/organization/devices/:deviceId/unassign')
+  async unassignDeviceUser(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param('deviceId') deviceId: string,
+  ): Promise<any> {
+    const organizationAdminId = req.headers['organizationAdminId'] as string;
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+    try {
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({
+          error: 'Organization not found',
+          success: false,
+        });
+      }
+
+      if (!deviceId) {
+        return res.status(400).json({
+          error: 'Device ID is required',
+          success: false,
+        });
+      }
+
       const deviceToUpdate =
         await this.onboardingService.validateDeviceById(deviceId);
       if (!deviceToUpdate?.device_uid) {
-        return res.status(404).json({ message: 'Device not found' });
+        return res.status(404).json({
+          message: 'Device not found',
+          success: false,
+        });
       }
 
-      const isUserIdLink = await this.onboardingService.validateUserIdLinked(
-        userId,
-        deviceId,
-      );
-      // Update user_uid for the device
-      deviceToUpdate.user_uid = userId;
+      if (deviceToUpdate.organization_uid !== OrganizationId) {
+        return res.status(403).json({
+          message: 'Device does not belong to this organization',
+          success: false,
+        });
+      }
+
+      const previousUserId = deviceToUpdate.user_uid;
+      deviceToUpdate.user_uid = null;
 
       const updatedDevice =
         await this.onboardingService.updateDevice(deviceToUpdate);
 
+      console.log(
+        `Successfully unassigned device ${deviceId} from user ${previousUserId}`,
+      );
+
       return res.status(200).json({
-        message: 'Device user updated successfully',
-        updatedDevice,
+        message: 'Device unassigned successfully',
+        success: true,
+        data: {
+          device: updatedDevice,
+          previousUserId: previousUserId,
+        },
       });
     } catch (error) {
-      return res.status(500).json({ message: 'Failed to update device user' });
+      console.error('Error in unassignDeviceUser:', error);
+      return res.status(500).json({
+        message: 'Failed to unassign device',
+        error: error.message,
+        success: false,
+      });
     }
   }
 
@@ -1135,7 +1461,7 @@ export class OnboardingController {
       }
 
       // Step 2: Check if Device Exists
-      
+
       const deviceExist = deviceId
         ? await this.onboardingService.checkDeviceIdExistWithDeviceId(
             macAddress,
@@ -1261,7 +1587,7 @@ export class OnboardingController {
 
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found !!' });
-      } 
+      }
 
       const { filetype } = req.query;
       const pkgFolderPath = path.join(
@@ -1419,121 +1745,125 @@ export class OnboardingController {
     }
   }
 
-@Get("/calculatedLogic")
-async getCalculatedLogic(
-  @Res() res: Response,
-  @Req() req: Request
-) {
-  try {
-    const organizationAdminId = req.headers['organizationAdminId'];
-    const organizationAdminIdString = Array.isArray(organizationAdminId)
-      ? organizationAdminId[0]
-      : organizationAdminId;
+  @Get('/calculatedLogic')
+  async getCalculatedLogic(@Res() res: Response, @Req() req: Request) {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
 
-    const organization =
-      await this.organizationAdminService.findOrganizationById(
-        organizationAdminIdString,
+      const organization =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!organization) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      const calculatedLogic =
+        await this.onboardingService.getCalculatedLogic(organization);
+
+      // Map the database response to match frontend expectations
+      const response = {
+        full_day_active_time: calculatedLogic?.full_day_active_time,
+        full_day_core_productive_time:
+          calculatedLogic?.full_day_core_productive_time,
+        full_day_productive_time: calculatedLogic?.full_day_productive_time,
+        full_day_idle_productive_time:
+          calculatedLogic?.full_day_idle_productive_time,
+        half_day_active_time: calculatedLogic?.half_day_active_time,
+        half_day_core_productive_time:
+          calculatedLogic?.half_day_core_productive_time,
+        half_day_productive_time: calculatedLogic?.half_day_productive_time,
+        half_day_idle_productive_time:
+          calculatedLogic?.half_day_idle_productive_time,
+        timesheetCalculationLogic:
+          calculatedLogic?.timesheet_calculation_logic ||
+          'coreProductivePlusProductive', // Add this line
+      };
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to fetch calculated logic',
+        error: error.message,
+      });
+    }
+  }
+  @Post('organization/sendTeamInvite')
+  async sendTeamInviteEmail(
+    @Body() body: { email: string; teamId: string; inviteUrl: string },
+    @Res() res: Response,
+    @Req() req: Request,
+  ): Promise<Response> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+        });
+      }
+
+      const organizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!organizationId) {
+        return res.status(404).json({
+          error: 'Organization not found',
+        });
+      }
+
+      const { email, teamId, inviteUrl } = body;
+
+      if (!email || !teamId || !inviteUrl) {
+        return res.status(400).json({
+          message: 'Email, team ID, and invite URL are required',
+        });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          message: 'Invalid email format',
+        });
+      }
+
+      const emailSent = await this.onboardingService.sendTeamInviteEmail(
+        email,
+        teamId,
+        organizationId,
+        inviteUrl,
       );
 
-    if (!organization) {
-      return res.status(404).json({ error: 'Organization not found !!' });
-    }
-
-    const calculatedLogic = await this.onboardingService.getCalculatedLogic(organization);
-    
-    // Map the database response to match frontend expectations
-    const response = {
-      full_day_active_time: calculatedLogic?.full_day_active_time,
-      full_day_core_productive_time: calculatedLogic?.full_day_core_productive_time,
-      full_day_productive_time: calculatedLogic?.full_day_productive_time,
-      full_day_idle_productive_time: calculatedLogic?.full_day_idle_productive_time,
-      half_day_active_time: calculatedLogic?.half_day_active_time,
-      half_day_core_productive_time: calculatedLogic?.half_day_core_productive_time,
-      half_day_productive_time: calculatedLogic?.half_day_productive_time,
-      half_day_idle_productive_time: calculatedLogic?.half_day_idle_productive_time,
-      timesheetCalculationLogic: calculatedLogic?.timesheet_calculation_logic || 'coreProductivePlusProductive', // Add this line
-    };
-    
-    return res.status(200).json(response);
-  } catch (error) {
-    return res.status(500).json({
-      message: 'Failed to fetch calculated logic',
-      error: error.message,
-    });
-  }
-}
-@Post('organization/sendTeamInvite')
-async sendTeamInviteEmail(
-  @Body() body: { email: string; teamId: string; inviteUrl: string },
-  @Res() res: Response,
-  @Req() req: Request,
-): Promise<Response> {
-  try {
-    const organizationAdminId = req.headers['organizationAdminId'];
-    const organizationAdminIdString = Array.isArray(organizationAdminId)
-      ? organizationAdminId[0]
-      : organizationAdminId;
-
-    if (!organizationAdminIdString) {
-      return res.status(400).json({ 
-        message: 'Organization Admin ID is required' 
-      });
-    }
-
-    const organizationId = await this.organizationAdminService.findOrganizationById(
-      organizationAdminIdString,
-    );
-
-    if (!organizationId) {
-      return res.status(404).json({ 
-        error: 'Organization not found' 
-      });
-    }
-
-    const { email, teamId, inviteUrl } = body;
-
-    if (!email || !teamId || !inviteUrl) {
-      return res.status(400).json({ 
-        message: 'Email, team ID, and invite URL are required' 
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ 
-        message: 'Invalid email format' 
-      });
-    }
-
-    const emailSent = await this.onboardingService.sendTeamInviteEmail(
-      email,
-      teamId,
-      organizationId,
-      inviteUrl,
-    );
-
-    if (emailSent) {
-      return res.status(200).json({
-        message: 'Invitation email sent successfully!',
-        success: true,
-      });
-    } else {
+      if (emailSent) {
+        return res.status(200).json({
+          message: 'Invitation email sent successfully!',
+          success: true,
+        });
+      } else {
+        return res.status(500).json({
+          message: 'Failed to send email. Please try again.',
+          success: false,
+        });
+      }
+    } catch (error) {
+      console.error('Send invite email error:', error);
       return res.status(500).json({
-        message: 'Failed to send email. Please try again.',
+        message: 'Failed to send invitation email',
+        error: error.message,
         success: false,
       });
     }
-
-  } catch (error) {
-    console.error('Send invite email error:', error);
-    return res.status(500).json({
-      message: 'Failed to send invitation email',
-      error: error.message,
-      success: false,
-    });
   }
-}
   @Delete('/policy/delete/:policy_id')
   async deletePolicy(
     @Res() res: Response,

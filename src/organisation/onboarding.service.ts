@@ -363,7 +363,20 @@ ${sanitizedOrgName} Team
       return false;
     }
   }
-
+  async findUnassignedDevices(organizationId: string): Promise<Devices[]> {
+    try {
+      const unassignedDevices = await this.devicesRepository.find({
+        where: {
+          organization_uid: organizationId,
+          user_uid: IsNull(), // Devices that are not assigned to any user
+        },
+      });
+      return unassignedDevices;
+    } catch (error) {
+      console.error('Error finding unassigned devices:', error);
+      throw new Error('Failed to fetch unassigned devices');
+    }
+  }
   async getLastestActivity(
     organid: string,
   ): Promise<{ [key: string]: string }> {
@@ -661,46 +674,89 @@ ${sanitizedOrgName} Team
     console.log('Updated User:', updatedUser);
     return updatedUser;
   }
-  async findAllUsers(Id: string): Promise<User[]> {
-    return await this.userRepository.find({ where: { organizationId: Id } });
-  }
+  async findAllUsers(organizationId: string): Promise<User[]> {
+    try {
+      console.log('Finding all users for organization:', organizationId);
 
-  async findUserById(Id: string): Promise<User> {
-    return await this.userRepository.findOne({ where: { userUUID: Id } });
-  }
-  async findAllDevices(organId: string): Promise<Devices[]> {
-    console.log('organId', organId);
-    let devices = await this.devicesRepository.find({
-      where: { organization_uid: organId },
-    });
-    let deviceInfo = await this.userActivityRepository.find({
-      where: { organization_id: organId },
-    });
-
-    console.log('devices: ', devices.length);
-    if (!devices?.length) {
-      return null;
-    }
-    // console.log('devicesInfo: ' + deviceInfo.length);
-
-    devices = devices.map((item) => {
-      // console.log('device: ' + item);
-      deviceInfo.map((itemInfo) => {
-        // console.log("status",itemInfo?.user_uid === item?.device_uid)
-        if (itemInfo?.user_uid === item?.device_uid) {
-          item['deviceInfo'] = itemInfo;
-        }
-        return itemInfo;
+      const users = await this.userRepository.find({
+        where: { organizationId },
+        order: { created_at: 'DESC' },
+        relations: ['team'],
       });
-      return item;
-    });
 
-    console.log(
-      'devices',
-      devices.map((item) => console.log(item['deviceInfo'])),
-    );
-    return devices;
+      console.log(
+        `Found ${users.length} users for organization ${organizationId}`,
+      );
+      return users;
+    } catch (error) {
+      console.error('Error in findAllUsers:', error);
+      throw new Error('Failed to fetch users');
+    }
   }
+
+  async findUserById(userId: string): Promise<User> {
+    try {
+      console.log('Finding user by ID:', userId);
+      const user = await this.userRepository.findOne({
+        where: { userUUID: userId },
+        relations: ['team'],
+      });
+      console.log('User find result:', user ? 'Found' : 'Not found');
+      return user;
+    } catch (error) {
+      console.error('Error finding user by ID:', error);
+      throw error;
+    }
+  }
+
+  async findAllDevices(organId: string): Promise<Devices[]> {
+    try {
+      console.log('Finding all devices for organization:', organId);
+
+      let devices = await this.devicesRepository.find({
+        where: { organization_uid: organId },
+        order: { created_at: 'DESC' },
+      });
+
+      console.log(
+        `Found ${devices.length} devices for organization ${organId}`,
+      );
+
+      if (!devices?.length) {
+        console.log('No devices found for organization:', organId);
+        return [];
+      }
+
+      // Get user activity data for additional device information
+      let deviceInfo = await this.userActivityRepository.find({
+        where: { organization_id: organId },
+        order: { timestamp: 'DESC' },
+      });
+
+      console.log('Found device activities:', deviceInfo.length);
+
+      // Map device info to devices
+      devices = devices.map((device) => {
+        // Find the most recent activity for this device
+        const recentActivity = deviceInfo.find(
+          (activity) => activity.user_uid === device.device_uid,
+        );
+
+        if (recentActivity) {
+          device['deviceInfo'] = recentActivity;
+          device['lastActivity'] = recentActivity.timestamp;
+        }
+
+        return device;
+      });
+
+      return devices;
+    } catch (error) {
+      console.error('Error in findAllDevices:', error);
+      throw new Error('Failed to fetch devices');
+    }
+  }
+
   async fetchAllOrganization(organId: string): Promise<Organization> {
     return await this.organizationRepository.findOne({
       where: { id: organId },
@@ -1337,33 +1393,196 @@ ${sanitizedOrgName} Team
   async ValidateUserByGmail(email: string) {
     try {
       let user = await this.userRepository.findOne({ where: { email: email } });
-      return user;
+      return user;  
     } catch (err) {
       throw new BadRequestException(`Error: ${err}`);
     }
   }
 
-  async validateDeviceById(id: string): Promise<Devices> {
-    const device = await this.devicesRepository.findOne({
-      where: { device_uid: id },
-    });
-
-    return device;
+  async validateDeviceById(deviceId: string): Promise<Devices> {
+    try {
+      console.log('Validating device by ID:', deviceId);
+      const device = await this.devicesRepository.findOne({
+        where: { device_uid: deviceId },
+      });
+      console.log('Device validation result:', device ? 'Found' : 'Not found');
+      return device;
+    } catch (error) {
+      console.error('Error validating device by ID:', error);
+      throw error;
+    }
   }
+
   async updateDevice(device: Devices): Promise<Devices> {
-    return await this.devicesRepository.save(device);
+    try {
+      console.log('Updating device:', device.device_uid);
+      const updatedDevice = await this.devicesRepository.save(device);
+      console.log('Device update successful');
+      return updatedDevice;
+    } catch (error) {
+      console.error('Error updating device:', error);
+      throw error;
+    }
   }
   async validateUserIdLinked(userId: string, deviceId: string): Promise<any> {
-    const isExist = await this.devicesRepository.findOne({
-      where: { user_uid: userId },
-    });
-    if (isExist?.device_uid) {
-      isExist.user_uid = null;
+    try {
+      // First, check if the user is already assigned to another device
+      const existingAssignment = await this.devicesRepository.findOne({
+        where: { user_uid: userId },
+      });
+
+      if (existingAssignment && existingAssignment.device_uid !== deviceId) {
+        // Remove the user from the previous device
+        existingAssignment.user_uid = null;
+        await this.devicesRepository.save(existingAssignment);
+        console.log(
+          `Removed user ${userId} from device ${existingAssignment.device_uid}`,
+        );
+      }
+
+      return existingAssignment ? existingAssignment.device_uid : null;
+    } catch (error) {
+      console.error('Error in validateUserIdLinked:', error);
+      throw new Error('Failed to validate user device link');
     }
-    await this.devicesRepository.save(isExist);
-    return isExist.device_uid;
+  }
+  async getDeviceAssignmentSummary(organizationId: string): Promise<{
+    totalDevices: number;
+    assignedDevices: number;
+    unassignedDevices: number;
+    totalUsers: number;
+    devicesPerUser: { [userId: string]: number };
+  }> {
+    try {
+      const [devices, users] = await Promise.all([
+        this.findAllDevices(organizationId),
+        this.findAllUsers(organizationId),
+      ]);
+
+      const assignedDevices = devices.filter((device) => device.user_uid);
+      const unassignedDevices = devices.filter((device) => !device.user_uid);
+
+      // Count devices per user
+      const devicesPerUser: { [userId: string]: number } = {};
+      assignedDevices.forEach((device) => {
+        if (device.user_uid) {
+          devicesPerUser[device.user_uid] =
+            (devicesPerUser[device.user_uid] || 0) + 1;
+        }
+      });
+
+      return {
+        totalDevices: devices.length,
+        assignedDevices: assignedDevices.length,
+        unassignedDevices: unassignedDevices.length,
+        totalUsers: users.length,
+        devicesPerUser,
+      };
+    } catch (error) {
+      console.error('Error getting device assignment summary:', error);
+      throw new Error('Failed to get device assignment summary');
+    }
   }
 
+  // Add method to validate device assignment
+  async validateDeviceAssignment(
+    deviceId: string,
+    userId: string,
+    organizationId: string,
+  ): Promise<{
+    isValid: boolean;
+    message: string;
+    device?: Devices;
+    user?: User;
+  }> {
+    try {
+      // Validate device exists and belongs to organization
+      const device = await this.devicesRepository.findOne({
+        where: {
+          device_uid: deviceId,
+          organization_uid: organizationId,
+        },
+      });
+
+      if (!device) {
+        return {
+          isValid: false,
+          message: 'Device not found or does not belong to this organization',
+        };
+      }
+
+      // Validate user exists and belongs to organization
+      const user = await this.userRepository.findOne({
+        where: {
+          userUUID: userId,
+          organizationId: organizationId,
+        },
+        relations: ['team'],
+      });
+
+      if (!user) {
+        return {
+          isValid: false,
+          message: 'User not found or does not belong to this organization',
+        };
+      }
+
+      return {
+        isValid: true,
+        message: 'Valid assignment',
+        device,
+        user,
+      };
+    } catch (error) {
+      console.error('Error validating device assignment:', error);
+      return {
+        isValid: false,
+        message: 'Error validating assignment',
+      };
+    }
+  }
+
+  async updateUserEmail(userId: string, newEmail: string): Promise<boolean> {
+    try {
+      console.log(`Updating email for user ${userId} to ${newEmail}`);
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newEmail)) {
+        console.error('Invalid email format:', newEmail);
+        return false;
+      }
+
+      // Check if email is already in use by another user
+      const existingUser = await this.userRepository.findOne({
+        where: { email: newEmail },
+      });
+
+      if (existingUser && existingUser.userUUID !== userId) {
+        console.error('Email already in use by another user:', newEmail);
+        return false;
+      }
+
+      // Update user email
+      const updateResult = await this.userRepository.update(
+        { userUUID: userId },
+        { email: newEmail },
+      );
+
+      if (updateResult.affected && updateResult.affected > 0) {
+        console.log(
+          `Successfully updated email for user ${userId} to ${newEmail}`,
+        );
+        return true;
+      }
+
+      console.log('No rows affected during email update');
+      return false;
+    } catch (error) {
+      console.error('Error updating user email:', error);
+      return false;
+    }
+  }
   async getProductivityData(
     organizationId: string,
     date: string,
