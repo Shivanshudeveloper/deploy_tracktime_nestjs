@@ -134,7 +134,7 @@ const weekdayData = [
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
 export const DeployFlaskBaseApi =
-  'https://python-url-classification-with-openai-1zax.onrender.com';
+  'https://python-url-classification-with-openai-6ujb.onrender.com';
 
 export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 type UpdateConfigType = DeepPartial<User['config']>;
@@ -756,7 +756,211 @@ ${sanitizedOrgName} Team
       throw new Error('Failed to fetch devices');
     }
   }
+  async getRecentActivityData(organizationId: string): Promise<any> {
+    try {
+      // Get all devices for the organization
+      const devices = await this.devicesRepository.find({
+        where: { organization_uid: organizationId },
+      });
 
+      const deviceIds = devices.map((device) => device.device_uid);
+
+      // Get all user activities for the organization
+      const userActivities = await this.userActivityRepository.find({
+        where: { organization_id: organizationId },
+        order: { timestamp: 'DESC' },
+      });
+
+      const result = {};
+
+      for (const device of devices) {
+        // Get activities for this specific device
+        const deviceActivities = userActivities.filter(
+          (activity) => activity.user_uid === device.device_uid,
+        );
+
+        if (deviceActivities.length === 0) {
+          result[device.device_uid] = {
+            inTime: '00:00',
+            outTime: '00:00',
+            activeTime: '00:00',
+            status: 'away',
+            productivity: '0%',
+            lastActiveDate: null,
+          };
+          continue;
+        }
+
+        // Find the most recent day with data (yesterday first, then most recent)
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        // Try to get yesterday's data first
+        let targetActivities = deviceActivities.filter((activity) =>
+          this.isSameDay(new Date(activity.timestamp), yesterday),
+        );
+
+        let targetDate = yesterday;
+        let status = 'idle'; // Data available but not today
+
+        // If no yesterday data, get the most recent day's data
+        if (targetActivities.length === 0) {
+          // Group activities by date
+          const activitiesByDate = this.groupActivitiesByDate(deviceActivities);
+          const dates = Object.keys(activitiesByDate).sort(
+            (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+          );
+
+          if (dates.length > 0) {
+            const mostRecentDate = dates[0];
+            targetActivities = activitiesByDate[mostRecentDate];
+            targetDate = new Date(mostRecentDate);
+
+            // Check if it's today's data
+            if (this.isSameDay(targetDate, today)) {
+              status = 'active';
+            }
+          }
+        }
+
+        if (targetActivities.length === 0) {
+          result[device.device_uid] = {
+            inTime: '00:00',
+            outTime: '00:00',
+            activeTime: '00:00',
+            status: 'away',
+            productivity: '0%',
+            lastActiveDate: null,
+          };
+          continue;
+        }
+
+        // Sort activities by timestamp for the target date
+        const sortedActivities = targetActivities.sort(
+          (a, b) =>
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
+
+        const firstActivity = sortedActivities[0];
+        const lastActivity = sortedActivities[sortedActivities.length - 1];
+
+        // Calculate in/out times
+        const inTime = this.formatTime(firstActivity.timestamp);
+        const outTime = this.formatTime(lastActivity.timestamp);
+
+        // Calculate active time (duration between first and last activity)
+        const activeTime = this.calculateDuration(
+          firstActivity.timestamp,
+          lastActivity.timestamp,
+        );
+
+        // Calculate productivity for that day
+        const productivity = await this.calculateDayProductivity(
+          targetActivities,
+          targetDate,
+        );
+
+        result[device.device_uid] = {
+          inTime,
+          outTime,
+          activeTime,
+          status,
+          productivity: `${productivity}%`,
+          lastActiveDate: this.formatDate(targetDate),
+        };
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error getting recent activity data:', error);
+      throw new Error('Failed to get recent activity data');
+    }
+  }
+  private groupActivitiesByDate(activities: UserActivity[]): {
+    [date: string]: UserActivity[];
+  } {
+    return activities.reduce((grouped, activity) => {
+      const date = new Date(activity.timestamp).toDateString();
+      if (!grouped[date]) {
+        grouped[date] = [];
+      }
+      grouped[date].push(activity);
+      return grouped;
+    }, {});
+  }
+
+  // Helper method to calculate productivity for a day
+  private async calculateDayProductivity(
+    activities: UserActivity[],
+    date: Date,
+  ): Promise<number> {
+    try {
+      if (activities.length === 0) return 0;
+
+      // Count productive vs total activities
+      const productiveActivities = activities.filter((activity) => {
+        // You can customize this logic based on your productivity criteria
+        // For now, assuming activities with certain app names or page titles are productive
+        const productiveApps = [
+          'vscode',
+          'visual studio',
+          'intellij',
+          'sublime',
+          'atom',
+        ];
+        const unproductiveApps = [
+          'youtube',
+          'facebook',
+          'instagram',
+          'twitter',
+          'tiktok',
+        ];
+
+        const appName = activity.app_name?.toLowerCase() || '';
+        const pageTitle = activity.page_title?.toLowerCase() || '';
+
+        // Check if it's a productive app
+        if (
+          productiveApps.some(
+            (app) => appName.includes(app) || pageTitle.includes(app),
+          )
+        ) {
+          return true;
+        }
+
+        // Check if it's an unproductive app
+        if (
+          unproductiveApps.some(
+            (app) => appName.includes(app) || pageTitle.includes(app),
+          )
+        ) {
+          return false;
+        }
+
+        // Default to neutral/productive for unknown apps
+        return true;
+      });
+
+      const productivityPercentage = Math.round(
+        (productiveActivities.length / activities.length) * 100,
+      );
+
+      return productivityPercentage;
+    } catch (error) {
+      console.error('Error calculating productivity:', error);
+      return 0;
+    }
+  }
+
+  // Helper method to format date
+  private formatDate(date: Date): string {
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
   async fetchAllOrganization(organId: string): Promise<Organization> {
     return await this.organizationRepository.findOne({
       where: { id: organId },
@@ -1058,17 +1262,13 @@ ${sanitizedOrgName} Team
     }, {});
   }
 
-  private isSameDay(date1: Date, date2: Date): boolean {
-    return (
-      date1.getFullYear() === date2.getFullYear() &&
-      date1.getMonth() === date2.getMonth() &&
-      date1.getDate() === date2.getDate()
-    );
-  }
-
-  private isWithinRange(date: Date, start: Date, end: Date): boolean {
-    return date >= start && date <= end;
-  }
+private isSameDay(date1: Date, date2: Date): boolean {
+  return (
+    date1.getFullYear() === date2.getFullYear() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getDate() === date2.getDate()
+  );
+}
 
   private formatTime(timestamp: Date): string {
     const date = new Date(timestamp);
@@ -1078,11 +1278,10 @@ ${sanitizedOrgName} Team
   private calculateDuration(start: Date, end: Date): string {
     const duration =
       (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60); // in hours
-    return `${Math.floor(duration)}:${Math.round((duration % 1) * 60)
-      .toString()
-      .padStart(2, '0')}`;
+    const hours = Math.floor(duration);
+    const minutes = Math.round((duration % 1) * 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   }
-
   async validateOrganization(organid: string): Promise<boolean> {
     const organId = await this.organizationRepository.findOne({
       where: { id: organid },
@@ -1393,7 +1592,7 @@ ${sanitizedOrgName} Team
   async ValidateUserByGmail(email: string) {
     try {
       let user = await this.userRepository.findOne({ where: { email: email } });
-      return user;  
+      return user;
     } catch (err) {
       throw new BadRequestException(`Error: ${err}`);
     }
