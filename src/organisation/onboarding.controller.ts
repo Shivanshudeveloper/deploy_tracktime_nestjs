@@ -572,149 +572,149 @@ export class OnboardingController {
     }
   }
 
-// Update your getAllDevices method in OnboardingController
+  // Update your getAllDevices method in OnboardingController
 
-@Get('organization/devices')
-async getAllDevices(
-  @Res() res: Response,
-  @Req() req: Request,
-): Promise<Response> {
-  const organizationAdminId = req.headers['organizationAdminId'];
-  const organizationAdminIdString = Array.isArray(organizationAdminId)
-    ? organizationAdminId[0]
-    : organizationAdminId;
+  @Get('organization/devices')
+  async getAllDevices(
+    @Res() res: Response,
+    @Req() req: Request,
+  ): Promise<Response> {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
 
-  if (!organizationAdminIdString) {
-    return res
-      .status(400)
-      .json({ message: 'Organization Admin ID is required' });
-  }
-
-  try {
-    const OrganizationId =
-      await this.organizationAdminService.findOrganizationById(
-        organizationAdminIdString,
-      );
-
-    if (!OrganizationId) {
-      return res.status(404).json({ error: 'Organization not found !!' });
+    if (!organizationAdminIdString) {
+      return res
+        .status(400)
+        .json({ message: 'Organization Admin ID is required' });
     }
 
-    const [
-      devices,
-      users,
-      images,
-      organization,
-      teams,
-      userActivities,
-      policies,
-      lastActive,
-      recentActivityData, // Add this new data
-    ] = await Promise.all([
-      this.onboardingService.findAllDevices(OrganizationId),
-      this.onboardingService.findAllUsers(OrganizationId),
-      this.onboardingService.fetchScreenShot(),
-      this.onboardingService.fetchAllOrganization(OrganizationId),
-      this.onboardingService.getAllTeam(OrganizationId),
-      this.onboardingService.getAllUserActivityData(OrganizationId),
-      this.onboardingService.getPoliciesForOrganization(OrganizationId),
-      this.onboardingService.getLastestActivity(OrganizationId),
-      this.onboardingService.getRecentActivityData(OrganizationId), // Add this call
-    ]);
-
-    const resolvedPolicies = await Promise.all(
-      policies.map(async (pol) =>
-        this.onboardingService.getPolicyTeamAndUser(pol.policyId),
-      ),
-    );
-
-    images?.sort(
-      (a, b) =>
-        new Date(b.lastModified).getTime() -
-        new Date(a.lastModified).getTime(),
-    );
-
-    for (const device of devices) {
-      device['LatestImage'] = null;
-      device['userDetail'] = null;
-      device['organizationDetail'] = organization;
-      device['teamDetail'] = null;
-      device['timeZone'] = organization?.timeZone;
-      device['IP_Adress'] = null;
-      device['policy'] = null;
-      device['lastActive'] = null;
-      
-      // Add recent activity data
-      const activityData = recentActivityData[device.device_uid] || {
-        inTime: '00:00',
-        outTime: '00:00',
-        activeTime: '00:00',
-        status: 'away',
-        productivity: '0%',
-        lastActiveDate: null,
-      };
-      
-      device['recentActivity'] = activityData;
-      device['deviceStatus'] = activityData.status; // For frontend filtering
-
-      // Assign Latest Image
-      const matchingImage = images.find(
-        (img) =>
-          img.key.split('/')[1].split('|')[1].split('.')[0] ===
-          device.device_uid,
-      );
-      if (matchingImage) {
-        device['LatestImage'] = matchingImage;
-      }
-      
-      device['lastActive'] = lastActive[device?.device_uid];
-      
-      // Assign IP Address
-      const userActivity = userActivities.find(
-        (activity) => activity.user_uid === device.user_uid,
-      );
-
-      if (userActivity) {
-        device['IP_Adress'] = userActivity.ip_address;
-      }
-
-      // Assign Policy
-      for (const policy of resolvedPolicies) {
-        const isUserAssigned = policy.assignedUsers?.some(
-          (userPol) => userPol.user?.userUUID === device.user_uid,
+    try {
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
         );
-        if (isUserAssigned) {
-          device['policy'] = policy.policyName;
-          break;
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found !!' });
+      }
+
+      const [
+        devices,
+        users,
+        images,
+        organization,
+        teams,
+        userActivities,
+        policies,
+        lastActive,
+        recentActivityData, // Add this new data
+      ] = await Promise.all([
+        this.onboardingService.findAllDevices(OrganizationId),
+        this.onboardingService.findAllUsers(OrganizationId),
+        this.onboardingService.fetchScreenShot(),
+        this.onboardingService.fetchAllOrganization(OrganizationId),
+        this.onboardingService.getAllTeam(OrganizationId),
+        this.onboardingService.getAllUserActivityData(OrganizationId),
+        this.onboardingService.getPoliciesForOrganization(OrganizationId),
+        this.onboardingService.getLastestActivity(OrganizationId),
+        this.onboardingService.getRecentActivityData(OrganizationId), // Add this call
+      ]);
+
+      const resolvedPolicies = await Promise.all(
+        policies.map(async (pol) =>
+          this.onboardingService.getPolicyTeamAndUser(pol.policyId),
+        ),
+      );
+
+      images?.sort(
+        (a, b) =>
+          new Date(b.lastModified).getTime() -
+          new Date(a.lastModified).getTime(),
+      );
+
+      for (const device of devices) {
+        device['LatestImage'] = null;
+        device['userDetail'] = null;
+        device['organizationDetail'] = organization;
+        device['teamDetail'] = null;
+        device['timeZone'] = organization?.timeZone;
+        device['IP_Adress'] = null;
+        device['policy'] = null;
+        device['lastActive'] = null;
+
+        // Add recent activity data
+        const activityData = recentActivityData[device.device_uid] || {
+          inTime: '00:00',
+          outTime: '00:00',
+          activeTime: '00:00',
+          status: 'away',
+          productivity: '0%',
+          lastActiveDate: null,
+        };
+
+        device['recentActivity'] = activityData;
+        device['deviceStatus'] = activityData.status; // For frontend filtering
+
+        // Assign Latest Image
+        const matchingImage = images.find(
+          (img) =>
+            img.key.split('/')[1].split('|')[1].split('.')[0] ===
+            device.device_uid,
+        );
+        if (matchingImage) {
+          device['LatestImage'] = matchingImage;
+        }
+
+        device['lastActive'] = lastActive[device?.device_uid];
+
+        // Assign IP Address
+        const userActivity = userActivities.find(
+          (activity) => activity.user_uid === device.user_uid,
+        );
+
+        if (userActivity) {
+          device['IP_Adress'] = userActivity.ip_address;
+        }
+
+        // Assign Policy
+        for (const policy of resolvedPolicies) {
+          const isUserAssigned = policy.assignedUsers?.some(
+            (userPol) => userPol.user?.userUUID === device.user_uid,
+          );
+          if (isUserAssigned) {
+            device['policy'] = policy.policyName;
+            break;
+          }
+        }
+
+        // Assign User Details
+        const userDetail = users.find(
+          (user) => user.userUUID === device.user_uid,
+        );
+        if (userDetail) {
+          device['userDetail'] = userDetail;
+
+          // Assign Team Details
+          const teamDetail = teams.find(
+            (team) => team.id === userDetail.teamId,
+          );
+          if (teamDetail) {
+            device['teamDetail'] = teamDetail;
+          }
         }
       }
 
-      // Assign User Details
-      const userDetail = users.find(
-        (user) => user.userUUID === device.user_uid,
-      );
-      if (userDetail) {
-        device['userDetail'] = userDetail;
-
-        // Assign Team Details
-        const teamDetail = teams.find(
-          (team) => team.id === userDetail.teamId,
-        );
-        if (teamDetail) {
-          device['teamDetail'] = teamDetail;
-        }
-      }
+      console.log('Final processed devices with recent activity:', devices);
+      return res.status(200).json({ devices, organization });
+    } catch (error) {
+      console.error('Failed to fetch devices:', error);
+      return res
+        .status(500)
+        .json({ message: 'Failed to fetch devices', error: error.message });
     }
-
-    console.log('Final processed devices with recent activity:', devices);
-    return res.status(200).json({ devices, organization });
-  } catch (error) {
-    console.error('Failed to fetch devices:', error);
-    return res
-      .status(500)
-      .json({ message: 'Failed to fetch devices', error: error.message });
   }
-}
 
   @Get('organization/users/:id')
   async getUserDetails(
@@ -812,7 +812,112 @@ async getAllDevices(
       });
     }
   }
+@Post('/exportTimeSheetData')
+async exportTimeSheetData(
+  @Res() res: Response,
+  @Req() req: Request,
+  @Body()
+  exportData: {
+    users: string[] | 'all';
+    date: string;
+    format: 'csv' | 'excel' | 'pdf' | 'txt'; // Make sure 'txt' is included
+    userData: any[];
+  },
+): Promise<void | Response> {
+  try {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
 
+    if (!organizationAdminIdString) {
+      return res.status(400).json({
+        message: 'Organization Admin ID is required',
+      });
+    }
+
+    const OrganizationId =
+      await this.organizationAdminService.findOrganizationById(
+        organizationAdminIdString,
+      );
+
+    if (!OrganizationId) {
+      return res.status(404).json({ error: 'Organization not found!' });
+    }
+
+    // Get timesheet data for the specified date
+    const userActivityData =
+      await this.onboardingService.getAllUserActivityData(OrganizationId);
+
+    const timeSheetData = await this.onboardingService.getTimeSheetData(
+      userActivityData,
+      exportData.date,
+      OrganizationId,
+    );
+
+    // Filter data based on selected users
+    let filteredData = timeSheetData.daily;
+    if (exportData.users !== 'all') {
+      filteredData = filteredData.filter((user) =>
+        exportData.users.includes(user.id),
+      );
+    }
+
+    // Generate export based on format
+    const exportResult = await this.onboardingService.generateExport(
+      filteredData,
+      exportData.format,
+      exportData.date,
+    );
+
+    // Set appropriate headers based on format - UPDATED with proper TXT handling
+    const formatConfig = {
+      csv: {
+        contentType: 'text/csv',
+        extension: 'csv',
+      },
+      excel: {
+        contentType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        extension: 'xlsx',
+      },
+      pdf: {
+        contentType: 'application/pdf',
+        extension: 'pdf',
+      },
+      txt: {
+        contentType: 'text/plain; charset=utf-8', // Enhanced content type
+        extension: 'txt',
+      },
+    };
+
+    const config = formatConfig[exportData.format];
+    const fileName = `timesheet_${exportData.date}.${config.extension}`;
+
+    res.set({
+      'Content-Type': config.contentType,
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+
+    // Handle different format types properly
+    if (exportData.format === 'excel' || exportData.format === 'pdf') {
+      // For binary formats, send the buffer
+      res.send(exportResult);
+    } else {
+      // For text formats (csv, txt), send as string with proper encoding
+      res.send(exportResult);
+    }
+  } catch (error) {
+    console.error('Export failed:', error);
+    return res.status(500).json({
+      message: 'Failed to export timesheet data',
+      error: error.message,
+    });
+  }
+}
   @Get('/getProductivityDetails/:userId')
   async getProductivityDetails(
     @Req() req: Request,

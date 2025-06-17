@@ -15,7 +15,6 @@ import { UserActivity } from 'src/users/user_activity.entity';
 import { DeepPartial } from 'typeorm';
 import { prototype } from 'events';
 import { ConfigService } from '@nestjs/config';
-import fs from 'fs';
 import { AccessAnalyzer, S3 } from 'aws-sdk';
 import { Devices } from './devices.entity';
 import { validate } from 'class-validator';
@@ -36,6 +35,11 @@ import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_pla
 import { organizationAdminService } from './OrganizationAdmin.service';
 import { ProductivitySettingEntity } from './prodsetting.entity';
 import { Resend } from 'resend';
+import * as ExcelJS from 'exceljs';
+import * as PDFDocument from 'pdfkit';
+import { createObjectCsvWriter } from 'csv-writer';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const holidayList = [
   // Indian Holidays
@@ -376,6 +380,312 @@ ${sanitizedOrgName} Team
       console.error('Error finding unassigned devices:', error);
       throw new Error('Failed to fetch unassigned devices');
     }
+  }
+
+  async generateExport(
+    data: any[],
+    format: 'csv' | 'excel' | 'pdf' | 'txt',
+    date: string,
+  ): Promise<Buffer | string> {
+    console.log(
+      `Generating export in ${format} format for ${data.length} records`,
+    );
+
+    try {
+      switch (format) {
+        case 'csv':
+          return this.generateCSV(data, date);
+        case 'excel':
+          return this.generateExcel(data, date);
+        case 'pdf':
+          return this.generatePDF(data, date);
+        case 'txt':
+          return this.generateText(data, date);
+        default:
+          throw new Error(`Unsupported export format: ${format}`);
+      }
+    } catch (error) {
+      console.error(`Error generating ${format} export:`, error);
+      throw new Error(`Failed to generate ${format} export: ${error.message}`);
+    }
+  }
+
+  private async generateCSV(data: any[], date: string): Promise<string> {
+    const headers = [
+      { id: 'name', title: 'Employee Name' },
+      { id: 'inTime', title: 'In Time' },
+      { id: 'outTime', title: 'Out Time' },
+      { id: 'workHour', title: 'Work Hours' },
+      { id: 'date', title: 'Date' },
+    ];
+
+    const records = data.map((item) => ({
+      name: item.name || 'N/A',
+      inTime: item.InTime || '00:00',
+      outTime: item.OutTime || '00:00',
+      workHour: item.WorkHour || '00:00',
+      date: this.formatDate(date),
+    }));
+
+    // Create CSV content manually since csv-writer requires file system
+    let csvContent = headers.map((h) => h.title).join(',') + '\n';
+
+    records.forEach((record) => {
+      const row = [
+        `"${record.name}"`,
+        `"${record.inTime}"`,
+        `"${record.outTime}"`,
+        `"${record.workHour}"`,
+        `"${record.date}"`,
+      ].join(',');
+      csvContent += row + '\n';
+    });
+
+    return csvContent;
+  }
+
+  private async generateExcel(data: any[], date: string): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Timesheet Data');
+
+    // Add title
+    worksheet.mergeCells('A1:E1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = `Timesheet Report - ${this.formatDate(date)}`;
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: 'center' };
+
+    // Add headers
+    const headers = [
+      'Employee Name',
+      'In Time',
+      'Out Time',
+      'Work Hours',
+      'Date',
+    ];
+    const headerRow = worksheet.addRow(headers);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+
+    // Add data rows
+    data.forEach((item) => {
+      const row = worksheet.addRow([
+        item.name || 'N/A',
+        item.InTime || '00:00',
+        item.OutTime || '00:00',
+        item.WorkHour || '00:00',
+        this.formatDate(date),
+      ]);
+
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+    });
+
+    // Auto-fit columns
+    worksheet.columns.forEach((column) => {
+      column.width = 15;
+    });
+
+    // Generate buffer
+    return (await workbook.xlsx.writeBuffer()) as Buffer;
+  }
+
+  private async generatePDF(data: any[], date: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 50 });
+        const chunks: Buffer[] = [];
+
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+        // Add title
+        doc
+          .fontSize(20)
+          .font('Helvetica-Bold')
+          .text(`Timesheet Report`, 50, 50);
+        doc
+          .fontSize(14)
+          .font('Helvetica')
+          .text(`Date: ${this.formatDate(date)}`, 50, 80);
+
+        // Add table headers
+        const startY = 120;
+        const headers = [
+          'Employee Name',
+          'In Time',
+          'Out Time',
+          'Work Hours',
+          'Date',
+        ];
+        const columnWidths = [150, 80, 80, 80, 100];
+        let currentY = startY;
+
+        // Draw header row
+        doc.fontSize(12).font('Helvetica-Bold');
+        let currentX = 50;
+        headers.forEach((header, index) => {
+          doc.rect(currentX, currentY, columnWidths[index], 25).stroke();
+          doc.text(header, currentX + 5, currentY + 7, {
+            width: columnWidths[index] - 10,
+            align: 'left',
+          });
+          currentX += columnWidths[index];
+        });
+
+        currentY += 25;
+
+        // Draw data rows
+        doc.font('Helvetica');
+        data.forEach((item) => {
+          currentX = 50;
+          const rowData = [
+            item.name || 'N/A',
+            item.InTime || '00:00',
+            item.OutTime || '00:00',
+            item.WorkHour || '00:00',
+            this.formatDate(date),
+          ];
+
+          rowData.forEach((cellData, index) => {
+            doc.rect(currentX, currentY, columnWidths[index], 25).stroke();
+            doc.text(String(cellData), currentX + 5, currentY + 7, {
+              width: columnWidths[index] - 10,
+              align: 'left',
+            });
+            currentX += columnWidths[index];
+          });
+
+          currentY += 25;
+
+          // Add new page if needed
+          if (currentY > 700) {
+            doc.addPage();
+            currentY = 50;
+          }
+        });
+
+        // Add summary
+        currentY += 20;
+        doc
+          .fontSize(12)
+          .font('Helvetica-Bold')
+          .text(`Total Employees: ${data.length}`, 50, currentY);
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  private generateText(data: any[], date: string): string {
+    const formattedDate = this.formatDate(date);
+    const reportTitle = 'TIMESHEET REPORT';
+    const separator = '='.repeat(80);
+    const subSeparator = '-'.repeat(60);
+
+    let textContent = '';
+
+    // Header section
+    textContent += `${separator}\n`;
+    textContent += `${' '.repeat((80 - reportTitle.length) / 2)}${reportTitle}\n`;
+    textContent += `${separator}\n`;
+    textContent += `Report Date: ${formattedDate}\n`;
+    textContent += `Generated: ${new Date().toLocaleString('en-US', {
+      dateStyle: 'full',
+      timeStyle: 'short',
+    })}\n`;
+    textContent += `Total Employees: ${data.length}\n`;
+    textContent += `${separator}\n\n`;
+
+    // Employee data section
+    if (data.length === 0) {
+      textContent += `No employee data found for ${formattedDate}\n`;
+    } else {
+      data.forEach((item, index) => {
+        textContent += `EMPLOYEE ${(index + 1).toString().padStart(3, '0')}\n`;
+        textContent += `${subSeparator}\n`;
+        textContent += `Name        : ${item.name || 'N/A'}\n`;
+        textContent += `Check In    : ${item.InTime || '00:00'}\n`;
+        textContent += `Check Out   : ${item.OutTime || '00:00'}\n`;
+        textContent += `Work Hours  : ${item.WorkHour || '00:00'}\n`;
+        textContent += `Date        : ${formattedDate}\n`;
+
+        // Calculate status based on work hours
+        const workHour = item.WorkHour || '00:00';
+        const [hours, minutes] = workHour.split(':').map(Number);
+        const totalMinutes = hours * 60 + minutes;
+        const totalHours = totalMinutes / 60;
+
+        let status = 'Absent';
+        if (totalHours >= 8) status = 'Full Day';
+        else if (totalHours >= 4) status = 'Half Day';
+        else if (totalHours > 0) status = 'Partial';
+
+        textContent += `Status      : ${status}\n`;
+        textContent += `${subSeparator}\n\n`;
+      });
+    }
+
+    // Summary section
+    textContent += `${separator}\n`;
+    textContent += `SUMMARY\n`;
+    textContent += `${separator}\n`;
+
+    if (data.length > 0) {
+      const fullDayCount = data.filter((item) => {
+        const workHour = item.WorkHour || '00:00';
+        const [hours] = workHour.split(':').map(Number);
+        return hours >= 8;
+      }).length;
+
+      const halfDayCount = data.filter((item) => {
+        const workHour = item.WorkHour || '00:00';
+        const [hours] = workHour.split(':').map(Number);
+        return hours >= 4 && hours < 8;
+      }).length;
+
+      const partialCount = data.filter((item) => {
+        const workHour = item.WorkHour || '00:00';
+        const [hours] = workHour.split(':').map(Number);
+        return hours > 0 && hours < 4;
+      }).length;
+
+      const absentCount =
+        data.length - fullDayCount - halfDayCount - partialCount;
+
+      textContent += `Full Day Attendance    : ${fullDayCount.toString().padStart(3)} employees\n`;
+      textContent += `Half Day Attendance    : ${halfDayCount.toString().padStart(3)} employees\n`;
+      textContent += `Partial Attendance     : ${partialCount.toString().padStart(3)} employees\n`;
+      textContent += `Absent                 : ${absentCount.toString().padStart(3)} employees\n`;
+      textContent += `${subSeparator}\n`;
+      textContent += `Total Employees        : ${data.length.toString().padStart(3)}\n`;
+    }
+
+    textContent += `${separator}\n`;
+    textContent += `End of Report\n`;
+    textContent += `${separator}`;
+
+    return textContent;
   }
   async getLastestActivity(
     organid: string,
@@ -954,8 +1264,9 @@ ${sanitizedOrgName} Team
   }
 
   // Helper method to format date
-  private formatDate(date: Date): string {
-    return date.toLocaleDateString('en-US', {
+  private formatDate(date: string | Date): string {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -1262,13 +1573,13 @@ ${sanitizedOrgName} Team
     }, {});
   }
 
-private isSameDay(date1: Date, date2: Date): boolean {
-  return (
-    date1.getFullYear() === date2.getFullYear() &&
-    date1.getMonth() === date2.getMonth() &&
-    date1.getDate() === date2.getDate()
-  );
-}
+  private isSameDay(date1: Date, date2: Date): boolean {
+    return (
+      date1.getFullYear() === date2.getFullYear() &&
+      date1.getMonth() === date2.getMonth() &&
+      date1.getDate() === date2.getDate()
+    );
+  }
 
   private formatTime(timestamp: Date): string {
     const date = new Date(timestamp);
