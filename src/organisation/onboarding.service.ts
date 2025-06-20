@@ -596,7 +596,545 @@ ${sanitizedOrgName} Team
       }
     });
   }
+  async getAttendanceExportData(
+    organizationId: string,
+    startDate: string,
+    endDate: string,
+    users: string[] | 'all',
+    userData?: any[],
+  ): Promise<any[]> {
+    try {
+      const fromDate = new Date(startDate);
+      const toDate = new Date(endDate);
 
+      // Get attendance data using existing method
+      const attendanceData = await this.getWeeklyAttendance(
+        organizationId,
+        fromDate,
+        toDate,
+      );
+
+      if (!attendanceData || attendanceData.length === 0) {
+        return [];
+      }
+
+      // Filter data based on selected users
+      let filteredData = attendanceData;
+
+      if (users !== 'all' && Array.isArray(users) && users.length > 0) {
+        filteredData = attendanceData.filter(
+          (record) =>
+            users.includes(record.device_id) || users.includes(record.user_id),
+        );
+      }
+
+      // Transform data for export format
+      const exportData = filteredData.map((record) => {
+        const baseData = {
+          name: record.user_name || 'Unknown',
+          totalWorkDays: record.totalworkdays || 0,
+          holidays: record.holiday || 0,
+          device_id: record.device_id,
+          user_id: record.user_id,
+        };
+
+        // Add individual date columns
+        if (record.recordsofWeek && record.recordsofWeek.length > 0) {
+          record.recordsofWeek.forEach((dayRecord, index) => {
+            const dateKey = `date_${index + 1}`;
+            const statusKey = `status_${index + 1}`;
+
+            baseData[dateKey] = dayRecord.Date || '';
+            baseData[statusKey] = this.getStatusDisplayText(
+              dayRecord.DateStatus,
+            );
+          });
+        }
+
+        return baseData;
+      });
+
+      return exportData;
+    } catch (error) {
+      console.error('Error getting attendance export data:', error);
+      throw new Error(`Failed to get attendance export data: ${error.message}`);
+    }
+  }
+
+  async generateAttendanceExport(
+    data: any[],
+    format: 'csv' | 'excel' | 'pdf' | 'txt',
+    startDate: string,
+    endDate: string,
+  ): Promise<Buffer | string> {
+    console.log(
+      `Generating attendance export in ${format} format for ${data.length} records`,
+    );
+
+    try {
+      switch (format) {
+        case 'csv':
+          return this.generateAttendanceCSV(data, startDate, endDate);
+        case 'excel':
+          return this.generateAttendanceExcel(data, startDate, endDate);
+        case 'pdf':
+          return this.generateAttendancePDF(data, startDate, endDate);
+        case 'txt':
+          return this.generateAttendanceText(data, startDate, endDate);
+        default:
+          throw new Error(`Unsupported export format: ${format}`);
+      }
+    } catch (error) {
+      console.error(`Error generating ${format} attendance export:`, error);
+      throw new Error(
+        `Failed to generate ${format} attendance export: ${error.message}`,
+      );
+    }
+  }
+
+  private getStatusDisplayText(status: string): string {
+    const statusMap = {
+      fullDay: 'Full Day',
+      halfDay: 'Half Day',
+      absent: 'Absent',
+      holiday: 'Holiday',
+    };
+    return statusMap[status] || 'Unknown';
+  }
+
+  private getDateHeaders(data: any[]): string[] {
+    if (!data || data.length === 0) return [];
+
+    const dateHeaders = [];
+    let index = 1;
+
+    while (data[0][`date_${index}`]) {
+      const dateStr = data[0][`date_${index}`];
+      // Format date for header (e.g., "Jun 1", "Jun 2")
+      try {
+        const date = new Date(dateStr);
+        const formatted = date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        });
+        dateHeaders.push(formatted);
+      } catch {
+        dateHeaders.push(dateStr);
+      }
+      index++;
+    }
+
+    return dateHeaders;
+  }
+
+private async generateAttendanceCSV(
+  data: any[],
+  startDate: string,
+  endDate: string,
+): Promise<string> {
+  const dateHeaders = this.getDateHeaders(data);
+  const headers = [
+    'Employee Name',
+    'Total Work Days (excluding holidays)',
+    'Holidays',
+    ...dateHeaders,
+  ];
+
+  let csvContent = headers.join(',') + '\n';
+
+  data.forEach((item) => {
+    const row = [
+      `"${item.name || 'N/A'}"`,
+      `"${item.totalWorkDays || 0}"`,
+      `"${item.holidays || 0}"`,
+    ];
+
+    // Add status for each date
+    let index = 1;
+    while (item[`status_${index}`]) {
+      row.push(`"${item[`status_${index}`] || 'N/A'}"`);
+      index++;
+    }
+
+    csvContent += row.join(',') + '\n';
+  });
+
+  // Add summary row
+  csvContent += '\n';
+  csvContent += '"SUMMARY:"\n';
+  csvContent += `"Total Employees","${data.length}"\n`;
+  csvContent += '"NOTE: Total Work Days exclude holidays"\n';
+
+  return csvContent;
+}
+
+private async generateAttendanceExcel(
+  data: any[],
+  startDate: string,
+  endDate: string,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Attendance Report');
+
+  // Add title
+  const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
+  worksheet.mergeCells(
+    'A1:' + this.getColumnLetter(3 + this.getDateHeaders(data).length) + '1',
+  );
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = `Attendance Report - ${dateRange}`;
+  titleCell.font = { bold: true, size: 16 };
+  titleCell.alignment = { horizontal: 'center' };
+
+  // Add headers
+  const dateHeaders = this.getDateHeaders(data);
+  const headers = [
+    'Employee Name',
+    'Total Work Days (excluding holidays)',
+    'Holidays',
+    ...dateHeaders,
+  ];
+  const headerRow = worksheet.addRow(headers);
+
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' },
+    };
+    cell.border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' },
+    };
+  });
+
+  // Add data rows
+  data.forEach((item) => {
+    const rowData = [
+      item.name || 'N/A',
+      item.totalWorkDays || 0,
+      item.holidays || 0,
+    ];
+
+    // Add status for each date
+    let index = 1;
+    while (item[`status_${index}`]) {
+      rowData.push(item[`status_${index}`] || 'N/A');
+      index++;
+    }
+
+    const row = worksheet.addRow(rowData);
+
+    row.eachCell((cell) => {
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+  });
+
+  // Add empty row
+  worksheet.addRow([]);
+
+  // Add summary
+  const summaryRow = worksheet.addRow(['SUMMARY', `Total Employees: ${data.length}`]);
+  summaryRow.getCell(1).font = { bold: true };
+  
+  const noteRow = worksheet.addRow(['NOTE:', 'Total Work Days exclude holidays']);
+  noteRow.getCell(1).font = { bold: true };
+
+  // Auto-fit columns
+  worksheet.columns.forEach((column) => {
+    column.width = 15;
+  });
+
+  return (await workbook.xlsx.writeBuffer()) as Buffer;
+}
+
+  private async generateAttendancePDF(
+    data: any[],
+    startDate: string,
+    endDate: string,
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 30, layout: 'landscape' }); // Changed to landscape for better space
+        const chunks: Buffer[] = [];
+
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+        const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
+
+        // Add title
+        doc
+          .fontSize(18)
+          .font('Helvetica-Bold')
+          .text('Attendance Report', 50, 50);
+        doc.fontSize(12).font('Helvetica').text(`Period: ${dateRange}`, 50, 75);
+
+        const startY = 110;
+        const dateHeaders = this.getDateHeaders(data);
+        const headers = [
+          'Name',
+          'Work Days',
+          'Holidays',
+          ...dateHeaders.map((h) => h.substring(0, 8)), // Increase character limit
+        ];
+
+        // Calculate column widths dynamically based on content and available space
+        const pageWidth = doc.page.width - 100; // Account for margins (landscape mode gives more width)
+        const minNameWidth = 100;
+        const minNumberWidth = 45;
+        const minDateWidth = 35;
+
+        // Calculate required width for name column based on longest name
+        const maxNameLength = Math.max(
+          ...data.map((item) => (item.name || 'N/A').length),
+          10, // minimum
+        );
+        const nameWidth = Math.max(
+          minNameWidth,
+          Math.min(maxNameLength * 6, 150),
+        ); // 6px per char, max 150px
+
+        // Calculate available width for date columns
+        const fixedColumnsWidth = nameWidth + 2 * minNumberWidth; // Name + Work Days + Holidays
+        const availableForDates = pageWidth - fixedColumnsWidth;
+        const dateColumnWidth = Math.max(
+          minDateWidth,
+          availableForDates / Math.max(dateHeaders.length, 1),
+        );
+
+        const columnWidths = [
+          nameWidth,
+          minNumberWidth,
+          minNumberWidth,
+          ...dateHeaders.map(() => dateColumnWidth),
+        ];
+
+        let currentY = startY;
+
+        // Draw header row with better spacing
+        doc.fontSize(9).font('Helvetica-Bold'); // Reduced font size for headers
+        let currentX = 50;
+        headers.forEach((header, index) => {
+          // Draw border
+          doc.rect(currentX, currentY, columnWidths[index], 30).stroke();
+
+          // Add text with proper alignment and word wrapping
+          doc.text(header, currentX + 3, currentY + 8, {
+            width: columnWidths[index] - 6,
+            align: index === 0 ? 'left' : 'center',
+            ellipsis: true,
+          });
+          currentX += columnWidths[index];
+        });
+
+        currentY += 30;
+
+        // Draw data rows with improved spacing
+        doc.fontSize(8).font('Helvetica'); // Smaller font for data
+        data.forEach((item) => {
+          currentX = 50;
+
+          // Check if we need a new page
+          if (currentY > doc.page.height - 100) {
+            doc.addPage({ layout: 'landscape' });
+            currentY = 50;
+
+            // Redraw headers on new page
+            doc.fontSize(9).font('Helvetica-Bold');
+            let headerX = 50;
+            headers.forEach((header, index) => {
+              doc.rect(headerX, currentY, columnWidths[index], 30).stroke();
+              doc.text(header, headerX + 3, currentY + 8, {
+                width: columnWidths[index] - 6,
+                align: index === 0 ? 'left' : 'center',
+                ellipsis: true,
+              });
+              headerX += columnWidths[index];
+            });
+            currentY += 30;
+            doc.fontSize(8).font('Helvetica');
+          }
+
+          const rowData = [
+            (item.name || 'N/A').substring(0, 20), // Limit name length
+            (item.totalWorkDays || 0).toString(),
+            (item.holidays || 0).toString(),
+          ];
+
+          // Add status for each date
+          let index = 1;
+          while (item[`status_${index}`]) {
+            const status = item[`status_${index}`] || 'N/A';
+            // Use shorter abbreviations for PDF
+            const shortStatus =
+              status === 'Full Day'
+                ? 'FD'
+                : status === 'Half Day'
+                  ? 'HD'
+                  : status === 'Holiday'
+                    ? 'HOL'
+                    : status === 'Absent'
+                      ? 'ABS'
+                      : 'N/A';
+            rowData.push(shortStatus);
+            index++;
+          }
+
+          rowData.forEach((cellData, index) => {
+            // Draw border
+            doc.rect(currentX, currentY, columnWidths[index], 25).stroke();
+
+            // Add text with proper alignment
+            doc.text(String(cellData), currentX + 3, currentY + 8, {
+              width: columnWidths[index] - 6,
+              align: index === 0 ? 'left' : 'center',
+              ellipsis: true,
+            });
+            currentX += columnWidths[index];
+          });
+
+          currentY += 25;
+        });
+
+        // Add summary
+        currentY += 20;
+        doc
+          .fontSize(12)
+          .font('Helvetica-Bold')
+          .text(`Total Employees: ${data.length}`, 50, currentY);
+
+        // Add legend
+        currentY += 30;
+        doc.text('Legend:', 50, currentY);
+        currentY += 15;
+        doc.fontSize(10).font('Helvetica');
+        doc.text(
+          'FD = Full Day, HD = Half Day, HOL = Holiday, ABS = Absent',
+          50,
+          currentY,
+        );
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+private generateAttendanceText(
+  data: any[],
+  startDate: string,
+  endDate: string,
+): string {
+  const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
+  const reportTitle = 'ATTENDANCE REPORT';
+  const separator = '='.repeat(100);
+  const subSeparator = '-'.repeat(80);
+
+  let textContent = '';
+
+  // Header section
+  textContent += `${separator}\n`;
+  textContent += `${' '.repeat((100 - reportTitle.length) / 2)}${reportTitle}\n`;
+  textContent += `${separator}\n`;
+  textContent += `Report Period: ${dateRange}\n`;
+  textContent += `Generated: ${new Date().toLocaleString('en-US', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+  })}\n`;
+  textContent += `Total Employees: ${data.length}\n`;
+  textContent += `${separator}\n\n`;
+
+  // Employee data section
+  if (data.length === 0) {
+    textContent += `No attendance data found for the specified period.\n`;
+  } else {
+    data.forEach((item, index) => {
+      textContent += `EMPLOYEE ${(index + 1).toString().padStart(3, '0')}\n`;
+      textContent += `${subSeparator}\n`;
+      textContent += `Name              : ${item.name || 'N/A'}\n`;
+      textContent += `Total Work Days   : ${item.totalWorkDays || 0} (excluding holidays)\n`; // Added clarification
+      textContent += `Holidays          : ${item.holidays || 0}\n`;
+
+      // Add daily attendance
+      textContent += `Daily Attendance  :\n`;
+      let index_inner = 1;
+      while (item[`date_${index_inner}`]) {
+        const date = item[`date_${index_inner}`];
+        const status = item[`status_${index_inner}`] || 'N/A';
+        textContent += `  ${date.padEnd(12)} : ${status}\n`;
+        index_inner++;
+      }
+
+      textContent += `${subSeparator}\n\n`;
+    });
+  }
+
+  // Summary section with corrected calculations
+  textContent += `${separator}\n`;
+  textContent += `SUMMARY\n`;
+  textContent += `${separator}\n`;
+
+  if (data.length > 0) {
+    let totalFullDays = 0;
+    let totalHalfDays = 0;
+    let totalAbsent = 0;
+    let totalHolidays = 0;
+    let totalWorkDaysSum = 0;
+    let totalHolidaysSum = 0;
+
+    data.forEach((item) => {
+      totalWorkDaysSum += item.totalWorkDays || 0;
+      totalHolidaysSum += item.holidays || 0;
+      
+      let index = 1;
+      while (item[`status_${index}`]) {
+        const status = item[`status_${index}`];
+        if (status === 'Full Day') totalFullDays++;
+        else if (status === 'Half Day') totalHalfDays++;
+        else if (status === 'Absent') totalAbsent++;
+        else if (status === 'Holiday') totalHolidays++;
+        index++;
+      }
+    });
+
+    textContent += `Total Full Day Attendance     : ${totalFullDays.toString().padStart(6)}\n`;
+    textContent += `Total Half Day Attendance     : ${totalHalfDays.toString().padStart(6)}\n`;
+    textContent += `Total Absences                : ${totalAbsent.toString().padStart(6)}\n`;
+    textContent += `Total Holiday Records         : ${totalHolidays.toString().padStart(6)}\n`;
+    textContent += `${subSeparator}\n`;
+    textContent += `Total Employees               : ${data.length.toString().padStart(6)}\n`;
+    textContent += `Average Work Days per Employee: ${(totalWorkDaysSum / data.length).toFixed(1).padStart(6)}\n`;
+    textContent += `Average Holidays per Employee : ${(totalHolidaysSum / data.length).toFixed(1).padStart(6)}\n`;
+  }
+
+  textContent += `${separator}\n`;
+  textContent += `NOTE: Total Work Days = Total Days in Period - Holidays\n`;
+  textContent += `${separator}\n`;
+  textContent += `End of Report\n`;
+  textContent += `${separator}`;
+
+  return textContent;
+}
+
+  // Helper method to convert column number to letter (for Excel)
+  private getColumnLetter(columnNumber: number): string {
+    let letter = '';
+    while (columnNumber > 0) {
+      const remainder = (columnNumber - 1) % 26;
+      letter = String.fromCharCode(65 + remainder) + letter;
+      columnNumber = Math.floor((columnNumber - 1) / 26);
+    }
+    return letter;
+  }
   private generateText(data: any[], date: string): string {
     const formattedDate = this.formatDate(date);
     const reportTitle = 'TIMESHEET REPORT';
@@ -2138,15 +2676,8 @@ ${sanitizedOrgName} Team
     const attendanceData: AttendanceDto[] = [];
 
     for (const device of devices) {
-      // const testUserActivite = await this.userActivityRepository.find({where:{user_uid:device.device_uid,timestamp:Between(fromDate,toDate),organization_id:device.organization_uid}})
-      // console.log('testUserActivite', testUserActivite);
       const userActivities = await this.userActivityRepository.find({
         where: {
-          // organization_id: device.organization_uid,
-
-          // NOTE: here the organizationId is different in user_activity table then in device table for the user, I think due to
-          //  rust application dev_config is alwasy set to same organizationId that's why it's giving the different organizationId here.
-          // fix this issue later on.
           timestamp: Between(fromDate, toDate),
           user_uid: device.device_uid,
         },
@@ -2155,8 +2686,8 @@ ${sanitizedOrgName} Team
       console.log('userActivities', userActivities);
 
       const recordsOfWeek: any[] = [];
-
       const days = this.getDateRange(fromDate, toDate);
+      let totalHolidays = 0; // Track holidays
 
       for (const day of days) {
         const activitiesOfDay = userActivities.filter(
@@ -2166,9 +2697,7 @@ ${sanitizedOrgName} Team
 
         let status = 'absent';
         console.log(activitiesOfDay.length);
-        // activitiesOfDay.length && activitiesOfDay.forEach(activity =>{
-        //   console.log("Name: ",activity.device_user_name,activity.page_title);
-        // });
+
         if (activitiesOfDay.length > 0) {
           const firstActivity = activitiesOfDay[0];
           const lastActivity = activitiesOfDay[activitiesOfDay.length - 1];
@@ -2199,6 +2728,7 @@ ${sanitizedOrgName} Team
           const isHoliday = this.isHoliday(day.start);
           if (isHoliday) {
             status = 'holiday';
+            totalHolidays++; // Increment holiday counter
           }
         }
 
@@ -2212,14 +2742,16 @@ ${sanitizedOrgName} Team
         });
       }
 
+      // Calculate total work days correctly: total days - holidays
+      const totalDays = days.length;
+      const actualWorkDays = totalDays - totalHolidays;
+
       const attendanceDto: AttendanceDto = {
         device_id: device.device_uid,
         user_name: device.user_name,
         user_id: device.user_uid,
-        totalworkdays: days.length,
-        holiday: recordsOfWeek.filter(
-          (record) => record.DateStatus === 'holiday',
-        ).length,
+        totalworkdays: actualWorkDays, // Fixed calculation
+        holiday: totalHolidays, // Use calculated holidays
         recordsofWeek: recordsOfWeek,
       };
 

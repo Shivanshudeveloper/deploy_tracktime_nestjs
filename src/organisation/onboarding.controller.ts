@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -916,6 +917,110 @@ async exportTimeSheetData(
       message: 'Failed to export timesheet data',
       error: error.message,
     });
+  }
+}
+@Post('exportAttendanceData')
+async exportAttendanceData(
+  @Body() exportAttendanceDto: {
+    users: string[] | 'all';
+    startDate: string;
+    endDate: string;
+    format: 'csv' | 'excel' | 'pdf' | 'txt';
+    userData?: any[];
+  },
+  @Req() req: any,
+  @Res() res: Response,
+): Promise<void> {
+  try {
+    const organizationAdminId = req.headers['organizationAdminId'];
+    const organizationAdminIdString = Array.isArray(organizationAdminId)
+      ? organizationAdminId[0]
+      : organizationAdminId;
+
+
+    const OrganizationId =
+      await this.organizationAdminService.findOrganizationById(
+        organizationAdminIdString,
+      );
+
+    if (!OrganizationId) {
+      throw new BadRequestException('Organization not found');
+
+    }
+
+    const { users, startDate, endDate, format, userData } = exportAttendanceDto;
+
+    // Validate required fields
+    if (!startDate || !endDate || !format || !users) {
+      throw new BadRequestException('Missing required fields: users, startDate, endDate, or format');
+    }
+
+    // Validate date format and range
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+
+    if (start > end) {
+      throw new BadRequestException('Start date cannot be after end date');
+    }
+
+    // Get attendance data
+    const attendanceData = await this.onboardingService.getAttendanceExportData(
+      OrganizationId,
+      startDate,
+      endDate,
+      users,
+      userData
+    );
+
+    if (!attendanceData || attendanceData.length === 0) {
+      throw new NotFoundException('No attendance data found for the specified criteria');
+    }
+
+    // Generate export file
+    const exportResult = await this.onboardingService.generateAttendanceExport(
+      attendanceData,
+      format,
+      startDate,
+      endDate
+    );
+
+    // Set response headers
+    const formatExtensions = {
+      csv: 'csv',
+      excel: 'xlsx', 
+      pdf: 'pdf',
+      txt: 'txt'
+    };
+
+    const extension = formatExtensions[format];
+    const filename = `attendance_report_${startDate}_to_${endDate}.${extension}`;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    if (format === 'csv' || format === 'txt') {
+      res.setHeader('Content-Type', 'text/plain');
+      res.send(exportResult);
+    } else if (format === 'excel') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.send(exportResult);
+    } else if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.send(exportResult);
+    }
+
+  } catch (error) {
+    console.error('Error exporting attendance data:', error);
+    
+    if (error instanceof BadRequestException || 
+        error instanceof NotFoundException) {
+      throw error;
+    }
+    
+    throw new BadRequestException(`Failed to export attendance data: ${error.message}`);
   }
 }
   @Get('/getProductivityDetails/:userId')
