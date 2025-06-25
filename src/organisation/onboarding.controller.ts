@@ -813,15 +813,240 @@ export class OnboardingController {
       });
     }
   }
-@Post('/exportTimeSheetData')
-async exportTimeSheetData(
+  @Post('/exportTimeSheetData')
+  async exportTimeSheetData(
+    @Res() res: Response,
+    @Req() req: Request,
+    @Body()
+    exportData: {
+      users: string[] | 'all';
+      date: string;
+      format: 'csv' | 'excel' | 'pdf' | 'txt'; // Make sure 'txt' is included
+      userData: any[];
+    },
+  ): Promise<void | Response> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+        });
+      }
+
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found!' });
+      }
+
+      // Get timesheet data for the specified date
+      const userActivityData =
+        await this.onboardingService.getAllUserActivityData(OrganizationId);
+
+      const timeSheetData = await this.onboardingService.getTimeSheetData(
+        userActivityData,
+        exportData.date,
+        OrganizationId,
+      );
+
+      // Filter data based on selected users
+      let filteredData = timeSheetData.daily;
+      if (exportData.users !== 'all') {
+        filteredData = filteredData.filter((user) =>
+          exportData.users.includes(user.id),
+        );
+      }
+
+      // Generate export based on format
+      const exportResult = await this.onboardingService.generateExport(
+        filteredData,
+        exportData.format,
+        exportData.date,
+      );
+
+      // Set appropriate headers based on format - UPDATED with proper TXT handling
+      const formatConfig = {
+        csv: {
+          contentType: 'text/csv',
+          extension: 'csv',
+        },
+        excel: {
+          contentType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          extension: 'xlsx',
+        },
+        pdf: {
+          contentType: 'application/pdf',
+          extension: 'pdf',
+        },
+        txt: {
+          contentType: 'text/plain; charset=utf-8', // Enhanced content type
+          extension: 'txt',
+        },
+      };
+
+      const config = formatConfig[exportData.format];
+      const fileName = `timesheet_${exportData.date}.${config.extension}`;
+
+      res.set({
+        'Content-Type': config.contentType,
+        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+
+      // Handle different format types properly
+      if (exportData.format === 'excel' || exportData.format === 'pdf') {
+        // For binary formats, send the buffer
+        res.send(exportResult);
+      } else {
+        // For text formats (csv, txt), send as string with proper encoding
+        res.send(exportResult);
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      return res.status(500).json({
+        message: 'Failed to export timesheet data',
+        error: error.message,
+      });
+    }
+  }
+  @Post('exportAttendanceData')
+  async exportAttendanceData(
+    @Body()
+    exportAttendanceDto: {
+      users: string[] | 'all';
+      startDate: string;
+      endDate: string;
+      format: 'csv' | 'excel' | 'pdf' | 'txt';
+      userData?: any[];
+    },
+    @Req() req: any,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
+
+      if (!OrganizationId) {
+        throw new BadRequestException('Organization not found');
+      }
+
+      const { users, startDate, endDate, format, userData } =
+        exportAttendanceDto;
+
+      // Validate required fields
+      if (!startDate || !endDate || !format || !users) {
+        throw new BadRequestException(
+          'Missing required fields: users, startDate, endDate, or format',
+        );
+      }
+
+      // Validate date format and range
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new BadRequestException('Invalid date format');
+      }
+
+      if (start > end) {
+        throw new BadRequestException('Start date cannot be after end date');
+      }
+
+      // Get attendance data
+      const attendanceData =
+        await this.onboardingService.getAttendanceExportData(
+          OrganizationId,
+          startDate,
+          endDate,
+          users,
+          userData,
+        );
+
+      if (!attendanceData || attendanceData.length === 0) {
+        throw new NotFoundException(
+          'No attendance data found for the specified criteria',
+        );
+      }
+
+      // Generate export file
+      const exportResult =
+        await this.onboardingService.generateAttendanceExport(
+          attendanceData,
+          format,
+          startDate,
+          endDate,
+        );
+
+      // Set response headers
+      const formatExtensions = {
+        csv: 'csv',
+        excel: 'xlsx',
+        pdf: 'pdf',
+        txt: 'txt',
+      };
+
+      const extension = formatExtensions[format];
+      const filename = `attendance_report_${startDate}_to_${endDate}.${extension}`;
+
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
+
+      if (format === 'csv' || format === 'txt') {
+        res.setHeader('Content-Type', 'text/plain');
+        res.send(exportResult);
+      } else if (format === 'excel') {
+        res.setHeader(
+          'Content-Type',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        res.send(exportResult);
+      } else if (format === 'pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.send(exportResult);
+      }
+    } catch (error) {
+      console.error('Error exporting attendance data:', error);
+
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+
+      throw new BadRequestException(
+        `Failed to export attendance data: ${error.message}`,
+      );
+    }
+  }
+@Post('/exportActivityData')
+async exportActivityData(
   @Res() res: Response,
   @Req() req: Request,
   @Body()
   exportData: {
     users: string[] | 'all';
     date: string;
-    format: 'csv' | 'excel' | 'pdf' | 'txt'; // Make sure 'txt' is included
+    format: 'csv' | 'excel' | 'pdf' | 'txt';
     userData: any[];
   },
 ): Promise<void | Response> {
@@ -846,181 +1071,86 @@ async exportTimeSheetData(
       return res.status(404).json({ error: 'Organization not found!' });
     }
 
-    // Get timesheet data for the specified date
-    const userActivityData =
-      await this.onboardingService.getAllUserActivityData(OrganizationId);
-
-    const timeSheetData = await this.onboardingService.getTimeSheetData(
-      userActivityData,
-      exportData.date,
-      OrganizationId,
-    );
-
-    // Filter data based on selected users
-    let filteredData = timeSheetData.daily;
-    if (exportData.users !== 'all') {
-      filteredData = filteredData.filter((user) =>
-        exportData.users.includes(user.id),
-      );
-    }
-
-    // Generate export based on format
-    const exportResult = await this.onboardingService.generateExport(
-      filteredData,
-      exportData.format,
-      exportData.date,
-    );
-
-    // Set appropriate headers based on format - UPDATED with proper TXT handling
-    const formatConfig = {
-      csv: {
-        contentType: 'text/csv',
-        extension: 'csv',
-      },
-      excel: {
-        contentType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        extension: 'xlsx',
-      },
-      pdf: {
-        contentType: 'application/pdf',
-        extension: 'pdf',
-      },
-      txt: {
-        contentType: 'text/plain; charset=utf-8', // Enhanced content type
-        extension: 'txt',
-      },
-    };
-
-    const config = formatConfig[exportData.format];
-    const fileName = `timesheet_${exportData.date}.${config.extension}`;
-
-    res.set({
-      'Content-Type': config.contentType,
-      'Content-Disposition': `attachment; filename="${fileName}"`,
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    });
-
-    // Handle different format types properly
-    if (exportData.format === 'excel' || exportData.format === 'pdf') {
-      // For binary formats, send the buffer
-      res.send(exportResult);
-    } else {
-      // For text formats (csv, txt), send as string with proper encoding
-      res.send(exportResult);
-    }
-  } catch (error) {
-    console.error('Export failed:', error);
-    return res.status(500).json({
-      message: 'Failed to export timesheet data',
-      error: error.message,
-    });
-  }
-}
-@Post('exportAttendanceData')
-async exportAttendanceData(
-  @Body() exportAttendanceDto: {
-    users: string[] | 'all';
-    startDate: string;
-    endDate: string;
-    format: 'csv' | 'excel' | 'pdf' | 'txt';
-    userData?: any[];
-  },
-  @Req() req: any,
-  @Res() res: Response,
-): Promise<void> {
-  try {
-    const organizationAdminId = req.headers['organizationAdminId'];
-    const organizationAdminIdString = Array.isArray(organizationAdminId)
-      ? organizationAdminId[0]
-      : organizationAdminId;
-
-
-    const OrganizationId =
-      await this.organizationAdminService.findOrganizationById(
-        organizationAdminIdString,
-      );
-
-    if (!OrganizationId) {
-      throw new BadRequestException('Organization not found');
-
-    }
-
-    const { users, startDate, endDate, format, userData } = exportAttendanceDto;
-
     // Validate required fields
-    if (!startDate || !endDate || !format || !users) {
-      throw new BadRequestException('Missing required fields: users, startDate, endDate, or format');
+    const { users, date, format, userData } = exportData;
+
+    if (!date || !format || !users) {
+      throw new BadRequestException(
+        'Missing required fields: users, date, or format',
+      );
     }
 
-    // Validate date format and range
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    // Validate date format
+    const targetDate = new Date(date);
+    if (isNaN(targetDate.getTime())) {
       throw new BadRequestException('Invalid date format');
     }
 
-    if (start > end) {
-      throw new BadRequestException('Start date cannot be after end date');
-    }
+    // Get activity timeline data
+    const activityData =
+      await this.onboardingService.getActivityTimelineExportData(
+        OrganizationId,
+        date,
+        users,
+        userData,
+      );
 
-    // Get attendance data
-    const attendanceData = await this.onboardingService.getAttendanceExportData(
-      OrganizationId,
-      startDate,
-      endDate,
-      users,
-      userData
-    );
-
-    if (!attendanceData || attendanceData.length === 0) {
-      throw new NotFoundException('No attendance data found for the specified criteria');
+    if (!activityData || activityData.length === 0) {
+      throw new NotFoundException(
+        'No activity timeline data found for the specified criteria',
+      );
     }
 
     // Generate export file
-    const exportResult = await this.onboardingService.generateAttendanceExport(
-      attendanceData,
-      format,
-      startDate,
-      endDate
-    );
+    const exportResult =
+      await this.onboardingService.generateActivityTimelineExport(
+        activityData,
+        format,
+        date,
+      );
 
     // Set response headers
     const formatExtensions = {
       csv: 'csv',
-      excel: 'xlsx', 
+      excel: 'xlsx',
       pdf: 'pdf',
-      txt: 'txt'
+      txt: 'txt',
     };
 
     const extension = formatExtensions[format];
-    const filename = `attendance_report_${startDate}_to_${endDate}.${extension}`;
+    const filename = `activity_timeline_${date}.${extension}`;
 
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
 
     if (format === 'csv' || format === 'txt') {
-      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.send(exportResult);
     } else if (format === 'excel') {
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
       res.send(exportResult);
     } else if (format === 'pdf') {
       res.setHeader('Content-Type', 'application/pdf');
       res.send(exportResult);
     }
-
   } catch (error) {
-    console.error('Error exporting attendance data:', error);
-    
-    if (error instanceof BadRequestException || 
-        error instanceof NotFoundException) {
+    console.error('Error exporting activity timeline data:', error);
+
+    if (
+      error instanceof BadRequestException ||
+      error instanceof NotFoundException
+    ) {
       throw error;
     }
-    
-    throw new BadRequestException(`Failed to export attendance data: ${error.message}`);
+
+    throw new BadRequestException(
+      `Failed to export activity timeline data: ${error.message}`,
+    );
   }
 }
   @Get('/getProductivityDetails/:userId')
