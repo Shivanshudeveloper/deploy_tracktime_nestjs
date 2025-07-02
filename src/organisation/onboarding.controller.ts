@@ -49,6 +49,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { TrackingPolicyDTO } from './dto/tracingpolicy.dto';
 import * as archiver from 'archiver'; // For creating zip files
 import axios from 'axios';
+import {
+  AdminProfileResponseDto,
+  UpdateAdminProfileDto,
+} from './dto/adminProfile.dto';
 @Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name);
@@ -121,6 +125,256 @@ export class OnboardingController {
     }
   }
 
+  @Get('admin/profile')
+  async getAdminProfile(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<Response<AdminProfileResponseDto>> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'] as string;
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+          success: false,
+        });
+      }
+
+      console.log('Fetching admin profile for ID:', organizationAdminIdString);
+
+      // Get admin profile data
+      const profileData =
+        await this.organizationAdminService.getAdminProfileData(
+          organizationAdminIdString,
+        );
+
+      if (!profileData) {
+        return res.status(404).json({
+          message: 'Admin profile not found',
+          success: false,
+        });
+      }
+
+      return res.status(200).json({
+        message: 'Admin profile fetched successfully',
+        success: true,
+        data: profileData,
+      });
+    } catch (error) {
+      console.error('Error fetching admin profile:', error);
+      return res.status(500).json({
+        message: 'Failed to fetch admin profile',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Patch('admin/profile')
+  async updateAdminProfile(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() updateData: UpdateAdminProfileDto,
+  ): Promise<Response<AdminProfileResponseDto>> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'] as string;
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+          success: false,
+        });
+      }
+
+      console.log('Updating admin profile for ID:', organizationAdminIdString);
+      console.log('Update data:', updateData);
+
+      // Validate input data
+      if (!updateData.personal && !updateData.company) {
+        return res.status(400).json({
+          message: 'At least personal or company information must be provided',
+          success: false,
+        });
+      }
+
+      // Update admin profile data
+      const updatedProfile =
+        await this.organizationAdminService.updateAdminProfileData(
+          organizationAdminIdString,
+          updateData,
+        );
+
+      if (!updatedProfile) {
+        return res.status(404).json({
+          message: 'Failed to update admin profile',
+          success: false,
+        });
+      }
+
+      return res.status(200).json({
+        message: 'Admin profile updated successfully',
+        success: true,
+        data: updatedProfile,
+      });
+    } catch (error) {
+      console.error('Error updating admin profile:', error);
+      return res.status(500).json({
+        message: 'Failed to update admin profile',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+  @Post('admin/upload-avatar')
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      storage: diskStorage({
+        destination: './uploads/avatars',
+        filename: (req, file, cb) => {
+          const adminId = req.headers['organizationadminid'] || 'unknown';
+          const uniqueSuffix = `${adminId}-${uuidv4()}${extname(file.originalname)}`;
+          cb(null, uniqueSuffix);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
+          return cb(new Error('Only image files are allowed!'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
+    }),
+  )
+  async uploadAvatar(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'] as string;
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+          success: false,
+        });
+      }
+
+      if (!file) {
+        return res.status(400).json({
+          message: 'No file uploaded',
+          success: false,
+        });
+      }
+
+      const fileUrl = `/uploads/avatars/${file.filename}`;
+
+      // Update admin avatar in database
+      await this.organizationAdminService.updateAdminAvatar(
+        organizationAdminIdString,
+        fileUrl,
+      );
+
+      return res.status(200).json({
+        message: 'Avatar uploaded successfully',
+        success: true,
+        fileUrl: fileUrl,
+      });
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      return res.status(500).json({
+        message: 'Failed to upload avatar',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Post('admin/upload-logo')
+  @UseInterceptors(
+    FileInterceptor('logo', {
+      storage: diskStorage({
+        destination: './uploads/logos',
+        filename: (req, file, cb) => {
+          const adminId = req.headers['organizationadminid'] || 'unknown';
+          const uniqueSuffix = `${adminId}-${uuidv4()}${extname(file.originalname)}`;
+          cb(null, uniqueSuffix);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif|svg)$/)) {
+          return cb(new Error('Only image files are allowed!'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB limit for logos
+      },
+    }),
+  )
+  async uploadLogo(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'] as string;
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+          success: false,
+        });
+      }
+
+      if (!file) {
+        return res.status(400).json({
+          message: 'No file uploaded',
+          success: false,
+        });
+      }
+
+      const fileUrl = `/uploads/logos/${file.filename}`;
+
+      // Update organization logo in database
+      const admin = await this.organizationAdminService.getAdminBasicInfo(
+        organizationAdminIdString,
+      );
+      if (admin.OrganizationId) {
+        await this.organizationAdminService.updateOrganizationLogo(
+          admin.OrganizationId,
+          fileUrl,
+        );
+      }
+
+      return res.status(200).json({
+        message: 'Logo uploaded successfully',
+        success: true,
+        fileUrl: fileUrl,
+      });
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      return res.status(500).json({
+        message: 'Failed to upload logo',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
   @Get('/users/screenshots')
   async getScreenShots(@Res() res: Response, @Req() req: Request) {
     try {
@@ -1038,121 +1292,121 @@ export class OnboardingController {
       );
     }
   }
-@Post('/exportActivityData')
-async exportActivityData(
-  @Res() res: Response,
-  @Req() req: Request,
-  @Body()
-  exportData: {
-    users: string[] | 'all';
-    date: string;
-    format: 'csv' | 'excel' | 'pdf' | 'txt';
-    userData: any[];
-  },
-): Promise<void | Response> {
-  try {
-    const organizationAdminId = req.headers['organizationAdminId'];
-    const organizationAdminIdString = Array.isArray(organizationAdminId)
-      ? organizationAdminId[0]
-      : organizationAdminId;
+  @Post('/exportActivityData')
+  async exportActivityData(
+    @Res() res: Response,
+    @Req() req: Request,
+    @Body()
+    exportData: {
+      users: string[] | 'all';
+      date: string;
+      format: 'csv' | 'excel' | 'pdf' | 'txt';
+      userData: any[];
+    },
+  ): Promise<void | Response> {
+    try {
+      const organizationAdminId = req.headers['organizationAdminId'];
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
 
-    if (!organizationAdminIdString) {
-      return res.status(400).json({
-        message: 'Organization Admin ID is required',
-      });
-    }
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+        });
+      }
 
-    const OrganizationId =
-      await this.organizationAdminService.findOrganizationById(
-        organizationAdminIdString,
-      );
+      const OrganizationId =
+        await this.organizationAdminService.findOrganizationById(
+          organizationAdminIdString,
+        );
 
-    if (!OrganizationId) {
-      return res.status(404).json({ error: 'Organization not found!' });
-    }
+      if (!OrganizationId) {
+        return res.status(404).json({ error: 'Organization not found!' });
+      }
 
-    // Validate required fields
-    const { users, date, format, userData } = exportData;
+      // Validate required fields
+      const { users, date, format, userData } = exportData;
 
-    if (!date || !format || !users) {
-      throw new BadRequestException(
-        'Missing required fields: users, date, or format',
-      );
-    }
+      if (!date || !format || !users) {
+        throw new BadRequestException(
+          'Missing required fields: users, date, or format',
+        );
+      }
 
-    // Validate date format
-    const targetDate = new Date(date);
-    if (isNaN(targetDate.getTime())) {
-      throw new BadRequestException('Invalid date format');
-    }
+      // Validate date format
+      const targetDate = new Date(date);
+      if (isNaN(targetDate.getTime())) {
+        throw new BadRequestException('Invalid date format');
+      }
 
-    // Get activity timeline data
-    const activityData =
-      await this.onboardingService.getActivityTimelineExportData(
-        OrganizationId,
-        date,
-        users,
-        userData,
-      );
+      // Get activity timeline data
+      const activityData =
+        await this.onboardingService.getActivityTimelineExportData(
+          OrganizationId,
+          date,
+          users,
+          userData,
+        );
 
-    if (!activityData || activityData.length === 0) {
-      throw new NotFoundException(
-        'No activity timeline data found for the specified criteria',
-      );
-    }
+      if (!activityData || activityData.length === 0) {
+        throw new NotFoundException(
+          'No activity timeline data found for the specified criteria',
+        );
+      }
 
-    // Generate export file
-    const exportResult =
-      await this.onboardingService.generateActivityTimelineExport(
-        activityData,
-        format,
-        date,
-      );
+      // Generate export file
+      const exportResult =
+        await this.onboardingService.generateActivityTimelineExport(
+          activityData,
+          format,
+          date,
+        );
 
-    // Set response headers
-    const formatExtensions = {
-      csv: 'csv',
-      excel: 'xlsx',
-      pdf: 'pdf',
-      txt: 'txt',
-    };
+      // Set response headers
+      const formatExtensions = {
+        csv: 'csv',
+        excel: 'xlsx',
+        pdf: 'pdf',
+        txt: 'txt',
+      };
 
-    const extension = formatExtensions[format];
-    const filename = `activity_timeline_${date}.${extension}`;
+      const extension = formatExtensions[format];
+      const filename = `activity_timeline_${date}.${extension}`;
 
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${filename}"`,
-    );
-
-    if (format === 'csv' || format === 'txt') {
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.send(exportResult);
-    } else if (format === 'excel') {
       res.setHeader(
-        'Content-Type',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
       );
-      res.send(exportResult);
-    } else if (format === 'pdf') {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.send(exportResult);
-    }
-  } catch (error) {
-    console.error('Error exporting activity timeline data:', error);
 
-    if (
-      error instanceof BadRequestException ||
-      error instanceof NotFoundException
-    ) {
-      throw error;
-    }
+      if (format === 'csv' || format === 'txt') {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(exportResult);
+      } else if (format === 'excel') {
+        res.setHeader(
+          'Content-Type',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        res.send(exportResult);
+      } else if (format === 'pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.send(exportResult);
+      }
+    } catch (error) {
+      console.error('Error exporting activity timeline data:', error);
 
-    throw new BadRequestException(
-      `Failed to export activity timeline data: ${error.message}`,
-    );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+
+      throw new BadRequestException(
+        `Failed to export activity timeline data: ${error.message}`,
+      );
+    }
   }
-}
   @Get('/getProductivityDetails/:userId')
   async getProductivityDetails(
     @Req() req: Request,

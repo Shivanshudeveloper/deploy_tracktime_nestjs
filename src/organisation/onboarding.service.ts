@@ -1942,7 +1942,7 @@ private generateAttendanceText(
   }
   async updateOrganization(
     Organization: Organization,
-    data: CreateOrganizationDTO,
+    data: string | any,
   ): Promise<string> {
     console.log(data);
     try {
@@ -3938,7 +3938,7 @@ private generateAttendanceText(
       // If no policy is found, return the default interval (e.g., 2)
       return true;
     }
-
+ 
     // Fetch the policy details, specifically the screenshot interval
     const screenshotInterval = await this.ScreenshotSetRepository.findOne({
       where: { policy: { policyId: policyUser?.policy?.policyId } },
@@ -3948,3 +3948,4 @@ private generateAttendanceText(
     return screenshotInterval?.blurScreenshotsStatus || false;
   }
 }
+ 
