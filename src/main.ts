@@ -8,7 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Global Validation Pipe with custom exception messages
-  app.useGlobalPipes(
+  app.useGlobalPipes( 
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,

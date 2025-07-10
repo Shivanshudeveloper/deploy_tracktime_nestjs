@@ -5,41 +5,31 @@ dotenv.config(); // Load environment variables from .env file
 
 const dbUrl = process.env.DATABASE_URL;
 
-
-
 if (!dbUrl) {
   throw new Error('DATABASE_URL is not provided in the environment variables');
 }
- 
-// Extract the 'rejectUnauthorized' parameter from DATABASE_URL
-const rejectUnauthorized = dbUrl.includes('rejectUnauthorized=true');
 
-// TypeORM configuration with SSL
+// TypeORM configuration for Neon PostgreSQL
 const typeOrmConfig: TypeOrmModuleOptions = {
-  type: 'mysql',
-  url: dbUrl, 
-  extra: {
-    ssl: {
-      rejectUnauthorized: rejectUnauthorized,
-    },
-  }, 
+  type: 'postgres', // Changed from 'mysql' to 'postgres'
+  url: dbUrl,
+  ssl: {
+    rejectUnauthorized: false, // Neon requires SSL but with self-signed certificates
+  },
   entities: [__dirname + '/**/*.entity{.ts,.js}'],
-  synchronize:false , // Turn off auto-synchronization if false 
-  dropSchema:false, // use this to drop all the data and tables at once but not in production.
- 
-  // for local host
-  // type:"mysql",
-  // host:"localhost",
-  // username:'root',
-  // password:"", 
-  // database:"tracktime_db",
-  // entities:[__dirname + "/**/*.entity{.ts,.js}"],
-  // synchronize:false
-}; 
+  synchronize: true, // Turn off auto-synchronization in production
+  dropSchema: false, // Don't drop schema in production
+  logging: process.env.NODE_ENV === 'development', // Enable logging in development
+  
+  // Additional PostgreSQL-specific configurations
+  extra: {
+    max: 20, // Maximum number of connections in pool
+    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+    connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection could not be established
+  },
+};
 
-export default typeOrmConfig;   
-
-
+export default typeOrmConfig;
 
 /*
 Steps to clear the data and start from teh fresh
