@@ -137,10 +137,9 @@ const weekdayData = [
 
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
-export const DeployFlaskBaseApi =
-  'https://python-url-classification-with-openai-6ujb.onrender.com';
-
-export const LocalFlaskBaseApi = 'http://127.0.0.1:5000';
+export let DeployFlaskBaseApi = 'https://python-url-classification-with-openai-a77n.onrender.com'; 
+export let LocalFlaskBaseApi = 'http://127.0.0.1:5000';
+// DeployFlaskBaseApi=LocalFlaskBaseApi;
 type UpdateConfigType = DeepPartial<User['config']>;
 
 @Injectable()
@@ -2732,57 +2731,67 @@ private generateAttendanceText(
     return false;
   }
 
-  async createDeviceForUser(
-    organization_uid: string,
-    userName: string,
-    email: string,
-    user_uid: string,
-    mac_address: string,
-  ): Promise<string> {
-    console.log('Entering device creation');
+async createDeviceForUser(
+  organization_uid: string,
+  userName: string,
+  email: string,
+  user_uid: string,
+  mac_address: string,
+): Promise<string> {
+  console.log('Entering device creation');
 
-    // Check if a device already exists for the user
-    const isDeviceAlreadyExist = await this.devicesRepository.findOne({
-      where: { user_uid: user_uid },
+  // Convert empty strings to null for UUID fields
+  const cleanUserUid = user_uid && user_uid.trim() !== '' ? user_uid : null;
+  const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
+
+  // Check if a device already exists for the user (only if user_uid is not null)
+  let isDeviceAlreadyExist = null;
+  if (cleanUserUid) {
+    isDeviceAlreadyExist = await this.devicesRepository.findOne({
+      where: { user_uid: cleanUserUid },
     });
     console.log('Device already exists:', isDeviceAlreadyExist);
 
     if (isDeviceAlreadyExist) {
       return isDeviceAlreadyExist.device_uid;
     }
+  }
 
-    // Efficiently find the last device with the highest number
-    const lastDevice = await this.devicesRepository
-      .createQueryBuilder('device')
-      .orderBy('device.device_name', 'DESC')
-      .getOne();
+  // Efficiently find the last device with the highest number
+  const lastDevice = await this.devicesRepository
+    .createQueryBuilder('device')
+    .where('device.organization_uid = :orgId', { orgId: organization_uid })
+    .orderBy('device.created_at', 'DESC')
+    .getOne();
 
-    let nextDeviceNumber = 1;
-    if (lastDevice?.device_name) {
-      const lastNumber = parseInt(lastDevice.device_name.split('-')[1]); // Assuming device name format "Device-X"
+  let nextDeviceNumber = 1;
+  if (lastDevice?.device_name) {
+    const match = lastDevice.device_name.match(/Device-(\d+)/);
+    if (match) {
+      const lastNumber = parseInt(match[1]);
       nextDeviceNumber = lastNumber + 1;
     }
-
-    const deviceName = `Device-${nextDeviceNumber}`;
-
-    // Create the device for the user
-    console.log(deviceName);
-    const deviceForUser = this.devicesRepository.create({
-      organization_uid,
-      user_name: userName,
-      user_uid: user_uid ? user_uid : null,
-      mac_address: mac_address ? mac_address : null,
-      device_name: deviceName,
-      config: { trackTimeStatus: TrackTimeStatus.Resume },
-    });
-
-    // Save the new device to the database
-    await this.devicesRepository.save(deviceForUser); // Make sure to save the new device
-    console.log('deviceForUser', deviceForUser);
-
-    console.log('Created device:', deviceForUser.device_uid);
-    return deviceForUser.device_uid;
   }
+
+  const deviceName = `Device-${nextDeviceNumber}`;
+
+  // Create the device for the user
+  console.log('Creating device with name:', deviceName);
+  const deviceForUser = this.devicesRepository.create({
+    organization_uid,
+    user_name: userName,
+    user_uid: cleanUserUid,
+    mac_address: cleanMacAddress,
+    device_name: deviceName,
+    config: { trackTimeStatus: TrackTimeStatus.Resume },
+  });
+
+  // Save the new device to the database
+  const savedDevice = await this.devicesRepository.save(deviceForUser);
+  console.log('Created device:', savedDevice.device_uid);
+
+  return savedDevice.device_uid;
+}
 
   async getUserDeviceId(deviceId: string) {
     try {
@@ -2797,9 +2806,9 @@ private generateAttendanceText(
         relations: ['team'],
       });
 
-      console.log('users_team', users.team);
+      console.log('users_team', users?.team);
       device['organizationDetails'] = organizationDetails;
-      device['organizationTeam'] = users.team;
+      device['organizationTeam'] = users?.team;
       console.log(device);
 
       return device;
@@ -2818,140 +2827,142 @@ private generateAttendanceText(
     } catch (err) {}
   }
 
-  async checkDeviceIdExist(
-    mac_address: string,
-    device_user_name: string,
-  ): Promise<string> {
-    try {
-      const isExist = await this.devicesRepository.findOne({
-        where: { mac_address },
-        // where : {user_name:device_user_name}
-      });
-      console.log('mac_address', mac_address);
-      console.log('device-user-name', device_user_name);
-      console.log('isExist', isExist);
-      if (
-        isExist?.user_name &&
-        // isExist?.user_name.toLowerCase() ===
-        device_user_name.toLowerCase()
-      ) {
-        return isExist?.device_uid;
-      }
-      console.log(
-        isExist?.user_name,
-        device_user_name,
-        isExist?.user_name == device_user_name,
-      );
-
-      return null;
-    } catch (err) {
-      console.log(err?.message);
+async checkDeviceIdExist(
+  mac_address: string,
+  device_user_name: string,
+): Promise<string> {
+  try {
+    const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
+    
+    if (!cleanMacAddress) {
       return null;
     }
-  }
-  async checkDeviceIdExistWithDeviceId(
-    mac_address: string,
-    device_id: string,
-    device_user_name: string,
-  ): Promise<string> {
-    try {
-      // Find the device with the given device UID or mac_address in a single query to optimize DB hits
-      let existingDevice = await this.devicesRepository.findOne({
-        where: [{ device_uid: device_id }, { mac_address: mac_address }],
-      });
 
-      // If no device is found with device_id, update mac_address if required
-      if (existingDevice && !existingDevice.mac_address && mac_address) {
-        const conflictingDevice = await this.devicesRepository.findOne({
-          where: { mac_address: mac_address },
-        });
+    const isExist = await this.devicesRepository.findOne({
+      where: { mac_address: cleanMacAddress },
+    });
 
-        // Remove conflicting mac_address if found
-        if (conflictingDevice) {
-          conflictingDevice.mac_address = null;
-          await this.devicesRepository.save(conflictingDevice);
-        }
+    console.log('mac_address', cleanMacAddress);
+    console.log('device-user-name', device_user_name);
+    console.log('isExist', isExist);
 
-        existingDevice.mac_address = mac_address;
-        await this.devicesRepository.save(existingDevice);
-
-        return existingDevice.device_uid;
-      }
-
-      return existingDevice ? existingDevice.device_uid : null;
-    } catch (error) {
-      this.logger.error(
-        `Error checking device ID: ${error.message}`,
-        error.stack,
-      );
-      throw error;
+    if (isExist?.user_name && device_user_name.toLowerCase()) {
+      return isExist.device_uid;
     }
+
+    return null;
+  } catch (err) {
+    console.log(err?.message);
+    return null;
   }
+}
+  
+async checkDeviceIdExistWithDeviceId(
+  mac_address: string,
+  device_id: string,
+  device_user_name: string,
+): Promise<string> {
+  try {
+    // Clean the input parameters
+    const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
+    const cleanDeviceId = device_id && device_id.trim() !== '' ? device_id : null;
 
-  async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
-    try {
-      // Log the input parameters for debugging
-      this.logger.debug(
-        `Fetching user config for device: ${deviceId}, organization: ${organizationId}`,
-      );
+    // Build the where conditions dynamically
+    const whereConditions: any[] = [];
+    
+    if (cleanDeviceId) {
+      whereConditions.push({ device_uid: cleanDeviceId });
+    }
+    
+    if (cleanMacAddress) {
+      whereConditions.push({ mac_address: cleanMacAddress });
+    }
 
-      // Validate that deviceId and organizationId are not null or empty
-      if (!deviceId || !organizationId) {
-        this.logger.error(
-          `Invalid input: deviceId or organizationId is missing.`,
-        );
-        throw new Error(
-          'Invalid input: deviceId or organizationId is missing.',
-        );
-      }
+    // If no valid conditions, return null
+    if (whereConditions.length === 0) {
+      return null;
+    }
 
-      // Fetch the user config from the database
-      let userConfig = await this.devicesRepository.findOne({
-        where: { device_uid: deviceId },
+    // Find the device with the given device UID or mac_address
+    let existingDevice = await this.devicesRepository.findOne({
+      where: whereConditions,
+    });
+
+    // If device found by device_id but no mac_address, update it
+    if (existingDevice && !existingDevice.mac_address && cleanMacAddress) {
+      // Check if another device already has this mac_address
+      const conflictingDevice = await this.devicesRepository.findOne({
+        where: { mac_address: cleanMacAddress },
       });
-      this.logger.log(`device_config: ${userConfig}`);
-      if (!userConfig) {
-        this.logger.warn(
-          `User config not found for device ${deviceId} and organization ${organizationId}`,
-        );
-        // throw new Error(
-        //   `User config not found for device ${deviceId} and organization ${organizationId}`,
-        // );
+
+      // Remove conflicting mac_address if found
+      if (conflictingDevice && conflictingDevice.device_uid !== existingDevice.device_uid) {
+        conflictingDevice.mac_address = null;
+        await this.devicesRepository.save(conflictingDevice);
       }
 
-      // Check if the config is null and update it with default value if necessary
-      if (!userConfig.config) {
-        this.logger.log(
-          `User config is null. Setting default config: { trackTimeStatus: 'Resume' } for device: ${deviceId}`,
-        );
+      existingDevice.mac_address = cleanMacAddress;
+      await this.devicesRepository.save(existingDevice);
+    }
 
-        // Update the config field
-        userConfig.config = { trackTimeStatus: TrackTimeStatus.Resume };
+    return existingDevice ? existingDevice.device_uid : null;
+  } catch (error) {
+    this.logger.error(`Error checking device ID: ${error.message}`, error.stack);
+    throw error;
+  }
+}
 
-        // Save the updated user config back to the database
-        await this.devicesRepository.save(userConfig);
+async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
+  try {
+    this.logger.debug(
+      `Fetching user config for device: ${deviceId}, organization: ${organizationId}`,
+    );
 
-        this.logger.log(
-          `Default config set successfully for device: ${deviceId}`,
-        );
-      }
-
-      this.logger.debug(
-        `User config fetched successfully: ${JSON.stringify(userConfig)}`,
-      );
-      return userConfig;
-    } catch (error) {
-      // Log the error with details to identify the cause
+    // Validate that deviceId and organizationId are not null or empty
+    if (!deviceId || !organizationId) {
       this.logger.error(
-        `Failed to fetch or update user config: ${error.message}`,
-        error.stack,
+        `Invalid input: deviceId or organizationId is missing.`,
       );
       throw new Error(
-        `Failed to fetch or update user config: ${error.message}`,
+        'Invalid input: deviceId or organizationId is missing.',
       );
     }
-  }
 
+    // Fetch the user config from the database
+    let userConfig = await this.devicesRepository.findOne({
+      where: { device_uid: deviceId, organization_uid: organizationId },
+    });
+
+    this.logger.log(`device_config: ${JSON.stringify(userConfig)}`);
+    
+    if (!userConfig) {
+      this.logger.warn(
+        `User config not found for device ${deviceId} and organization ${organizationId}`,
+      );
+      return null;
+    }
+
+    // Check if the config is null and update it with default value if necessary
+    if (!userConfig.config) {
+      this.logger.log(
+        `User config is null. Setting default config for device: ${deviceId}`,
+      );
+
+      userConfig.config = { trackTimeStatus: TrackTimeStatus.Resume };
+      await this.devicesRepository.save(userConfig);
+    }
+
+    return userConfig;
+  } catch (error) {
+    this.logger.error(
+      `Failed to fetch or update user config: ${error.message}`,
+      error.stack,
+    );
+    throw new Error(
+      `Failed to fetch or update user config: ${error.message}`,
+    );
+  }
+}
   async findDesktopApplication(orgId: string): Promise<any> {
     try {
       let desktopApp = await this.desktopAppRepository.findOne({

@@ -2075,11 +2075,14 @@ export class OnboardingController {
       }
 
       // Step 2: Check if Device Exists
+      // Clean the deviceId - convert empty string to null
+      const cleanDeviceId =
+        deviceId && deviceId.trim() !== '' ? deviceId : null;
 
-      const deviceExist = deviceId
+      const deviceExist = cleanDeviceId
         ? await this.onboardingService.checkDeviceIdExistWithDeviceId(
             macAddress,
-            deviceId,
+            cleanDeviceId,
             username,
           )
         : await this.onboardingService.checkDeviceIdExist(macAddress, username);
@@ -2095,8 +2098,8 @@ export class OnboardingController {
         deviceIdOrNew = await this.onboardingService.createDeviceForUser(
           organizationId,
           username,
-          '',
-          '',
+          '', // email - will be converted to null in the service
+          '', // user_uid - will be converted to null in the service
           macAddress,
         );
       }
@@ -2106,6 +2109,7 @@ export class OnboardingController {
         deviceIdOrNew,
         organizationId,
       );
+
       if (!userConfig) {
         this.logger.warn('User configuration not found');
         return res
@@ -2113,14 +2117,16 @@ export class OnboardingController {
           .json({ message: 'User configuration not found' });
       }
 
-      // step 5: getting Paid status for the organization.
+      // Step 5: Getting Paid status for the organization
       const isPaidStatus = await this.onboardingService.finalResponseData(
-        userConfig,
+        userConfig.config?.trackTimeStatus,
         deviceIdOrNew,
         organizationId,
       );
+
       const timeForUnPaidUsers =
         await this.onboardingService.findTimeForPaidUsers(deviceIdOrNew);
+
       const blurStatus =
         await this.onboardingService.findBlurScreenshotStatus(deviceIdOrNew);
 
@@ -2129,13 +2135,13 @@ export class OnboardingController {
         timeForUnpaidUser: timeForUnPaidUsers || 2,
         blurstatus: blurStatus || false,
         config: {
-          trackTimeStatus: userConfig?.config?.trackTimeStatus,
+          trackTimeStatus:
+            userConfig?.config?.trackTimeStatus || TrackTimeStatus.Resume,
           isPaid: isPaidStatus,
         },
       };
-      console.log('userConfigStatus: ', userConfig);
+
       this.logger.log(`FinalData ${JSON.stringify(finalData)}`);
-      console.log('userIdInNew', deviceIdOrNew);
       return res.status(200).json(finalData);
     } catch (error) {
       this.logger.error(
@@ -2650,7 +2656,7 @@ export class OnboardingController {
     @Res() res: Response,
     @Req() req: Request,
   ): Promise<Response> {
-    try {
+    try { 
       const organizationAdminId = req.headers['organizationAdminId'];
       // console.log("organizationAdmin: " + organizationAdminId)
       const organizationAdminIdString = Array.isArray(organizationAdminId)

@@ -26,8 +26,7 @@ export class UserActivity {
   @Column()
   page_title: string;
 
-  @Column()
-  screenshot: string;
+  // REMOVED: screenshot column (no longer store base64 in DB)
 
   @Column()
   productivity_status: string;
@@ -60,6 +59,9 @@ export class UserActivity {
   ram_usage: string;
 
   @Column({ nullable: true })
-  screenshot_uid: string;
+  screenshot_uid: string; // Reference to Wasabi stored screenshot
   
+  // OPTIONAL: Add thumbnail_uid if you want to track thumbnails separately
+  @Column({ nullable: true })
+  thumbnail_uid: string; // Reference to Wasabi stored thumbnail
 }

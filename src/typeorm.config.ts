@@ -17,11 +17,11 @@ const typeOrmConfig: TypeOrmModuleOptions = {
     rejectUnauthorized: false, // Neon requires SSL but with self-signed certificates
   },
   entities: [__dirname + '/**/*.entity{.ts,.js}'],
-  synchronize: true, // Turn off auto-synchronization in production
+  synchronize: false, // Turn off auto-synchronization in production
   dropSchema: false, // Don't drop schema in production
   logging: process.env.NODE_ENV === 'development', // Enable logging in development
   
-  // Additional PostgreSQL-specific configurations
+  // Additional PostgreSQL-specific configurations 
   extra: {
     max: 20, // Maximum number of connections in pool
     idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
