@@ -1910,7 +1910,8 @@ export class OnboardingController {
   // }
   @Post('register/user')
   async registerUser(
-    @Body() userData: Partial<User>,
+    @Body()
+    userData: Partial<User & { operatingSystem?: string; fileType?: string }>,
     @Res() res: Response,
     @Req() req: Request,
   ): Promise<any> {
@@ -1929,10 +1930,28 @@ export class OnboardingController {
 
     const organizationId = OrganizationId;
     const teamId = userData?.teamId;
+    const operatingSystem = userData?.operatingSystem || 'windows';
+    const fileType = userData?.fileType;
+
     try {
       if (!organizationId || !teamId) {
         return res.status(401).send({
           message: 'Organization or teams are required to create users.',
+        });
+      }
+
+      // Validate operating system
+      const supportedOS = ['windows', 'linux', 'macos'];
+      if (!supportedOS.includes(operatingSystem)) {
+        return res.status(400).json({
+          message: 'Invalid operating system. Supported: windows, linux, macos',
+        });
+      }
+
+      // For Windows, validate file type
+      if (operatingSystem === 'windows' && !fileType) {
+        return res.status(400).json({
+          message: 'File type is required for Windows installation',
         });
       }
 
@@ -1956,7 +1975,6 @@ export class OnboardingController {
       );
       if (!isUserExist?.email) {
         userData['organizationId'] = organizationId;
-
         isUserExist = await this.userService.registerUser({ ...userData });
         console.log('User registered here...');
       }
@@ -1974,55 +1992,14 @@ export class OnboardingController {
         return res.status(400).send({ message: 'Device creation failed' });
       }
 
-      // Encryption part (similar to Rust)
-      const key = Buffer.from('an example very very secret key.', 'utf-8'); // 32 bytes key
-      const iv = Buffer.alloc(16, 0); // 16 bytes IV initialized to zeros
-
-      const encryptData = (data: string, key: Buffer, iv: Buffer): string => {
-        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-        let encrypted = cipher.update(data, 'utf-8', 'hex');
-        encrypted += cipher.final('hex');
-        return encrypted;
-      };
-
-      const encryptedDeviceId = encryptData(uniqueDeviceCreation, key, iv);
-      const encryptedOrganizationId = encryptData(organizationId, key, iv);
-
-      const configFilePath = path.join(
-        process.cwd(),
-        'src',
-        'organisation',
-        'Installer',
-        'dev_config.txt',
+      // Always generate full installer package for invite users
+      return await this.generateInstallerPackage(
+        res,
+        operatingSystem,
+        fileType,
+        organizationId,
+        uniqueDeviceCreation,
       );
-
-      console.log('encrypted Organization id', encryptedOrganizationId);
-      console.log('encrypted device id', encryptedDeviceId);
-
-      try {
-        let configContents = fs.readFileSync(configFilePath, 'utf8');
-        const updatedConfig = configContents
-          .replace(/device_id=[^\n]*/gi, `device_id=${encryptedDeviceId}`)
-          .replace(
-            /organizationId=[^\n]*/gi,
-            `organizationId=${encryptedOrganizationId}`,
-          );
-
-        fs.writeFileSync(configFilePath, updatedConfig);
-        console.log('Config file updated successfully');
-
-        res.set({
-          'Content-Disposition': 'attachment; filename=dev_config.txt',
-          'Content-Type': 'text/plain',
-        });
-        return res.status(201).send(updatedConfig);
-      } catch (err) {
-        console.error('Error updating config file:', err);
-        return res.status(500).json({
-          message: 'Failed to update configuration file',
-          error: err.message,
-        });
-      }
     } catch (error) {
       console.error(error);
       return res.status(500).json({
@@ -2032,7 +2009,158 @@ export class OnboardingController {
     }
   }
 
-  private encryptData(data: String, key: string, iv: Buffer): string {
+  private async generateInstallerPackage(
+    res: Response,
+    operatingSystem: string,
+    fileType: string,
+    organizationId: string,
+    deviceId: string,
+  ): Promise<any> {
+    try {
+      const installerBasePath = path.join(
+        process.cwd(),
+        'src',
+        'organisation',
+        'Installer',
+      );
+
+      const osInstallerPath = path.join(installerBasePath, operatingSystem);
+
+      if (!fs.existsSync(osInstallerPath)) {
+        return res.status(404).json({
+          error: `Installer not available for ${operatingSystem}`,
+        });
+      }
+
+      const configFilePath = path.join(osInstallerPath, 'dev_config.txt');
+
+      // Encryption setup
+      const key = 'an example very very secret key.';
+      const iv = Buffer.alloc(16, 0);
+
+      // Prepare configuration values with actual device ID
+      const configValues = {
+        HOST_FOR_NEST:
+          'https://deploy-tracktime-nestjs-0kz7.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-zo6h.onrender.com/produce',
+        device_id: deviceId,
+        token: deviceId,
+        timeForUnpaidUser: '5',
+        organizationId: organizationId,
+        version: '1.0.0',
+        blurStatus: 'false',
+      };
+
+      // Encrypt all configuration values
+      const encryptedConfig = {
+        HOST_FOR_NEST: this.encryptData(configValues.HOST_FOR_NEST, key, iv),
+        HOST_FOR_GO: this.encryptData(configValues.HOST_FOR_GO, key, iv),
+        device_id: this.encryptData(configValues.device_id, key, iv),
+        token: this.encryptData(configValues.token, key, iv),
+        timeForUnpaidUser: this.encryptData(
+          configValues.timeForUnpaidUser,
+          key,
+          iv,
+        ),
+        organizationId: this.encryptData(configValues.organizationId, key, iv),
+        version: this.encryptData(configValues.version, key, iv),
+        blurStatus: this.encryptData(configValues.blurStatus, key, iv),
+      };
+
+      // Create the complete configuration content
+      const updatedConfig = `organizationId=${encryptedConfig.organizationId}
+timeForUnpaidUser=${encryptedConfig.timeForUnpaidUser}
+device_id=${encryptedConfig.device_id}
+version=${encryptedConfig.version}
+HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}
+blurStatus=${encryptedConfig.blurStatus}
+token=${encryptedConfig.token}
+HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}`;
+
+      // Write updated config to file
+      fs.writeFileSync(configFilePath, updatedConfig);
+
+      // Create zip file
+      let zipFileName;
+      if (operatingSystem === 'macos') {
+        zipFileName = `${organizationId}_macOS_package.zip`;
+      } else if (operatingSystem === 'windows') {
+        zipFileName = `${organizationId}_Windows_${fileType}_package.zip`;
+      } else {
+        zipFileName = `${organizationId}_${operatingSystem}_package.zip`;
+      }
+
+      const outputZipPath = path.join(installerBasePath, zipFileName);
+
+      return new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(outputZipPath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        output.on('close', () => {
+          console.log(`Archive created: ${archive.pointer()} total bytes`);
+
+          // Send zip file
+          res.set({
+            'Content-Disposition': `attachment; filename="${zipFileName}"`,
+            'Content-Type': 'application/zip',
+          });
+
+          res.sendFile(outputZipPath, {}, (err) => {
+            if (err) {
+              console.error('Error sending file:', err);
+              reject(err);
+            } else {
+              // Clean up
+              try {
+                fs.unlinkSync(outputZipPath);
+                console.log('Zip file cleaned up successfully');
+              } catch (unlinkError) {
+                console.error('Error deleting zip file:', unlinkError);
+              }
+              resolve(true);
+            }
+          });
+        });
+
+        output.on('error', reject);
+        archive.on('error', reject);
+
+        archive.pipe(output);
+
+        // Add files to archive
+        const files = fs.readdirSync(osInstallerPath);
+        for (const file of files) {
+          const filePath = path.join(osInstallerPath, file);
+          const stats = fs.statSync(filePath);
+
+          if (stats.isFile()) {
+            if (operatingSystem === 'macos' && file === 'trackTime') {
+              const fileBuffer = fs.readFileSync(filePath);
+              archive.append(fileBuffer, {
+                name: file,
+                mode: 0o755,
+              });
+            } else {
+              const fileBuffer = fs.readFileSync(filePath);
+              archive.append(fileBuffer, { name: file });
+            }
+          } else if (stats.isDirectory()) {
+            archive.directory(filePath, file);
+          }
+        }
+
+        archive.finalize();
+      });
+    } catch (error) {
+      console.error('Error generating installer package:', error);
+      return res.status(500).json({
+        message: 'Failed to generate installer package',
+        error: error.message,
+      });
+    }
+  }
+
+  private encryptData(data: string, key: string, iv: Buffer): string {
     const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(key), iv);
     let encrypted = cipher.update(data.toString(), 'utf-8', 'hex');
     encrypted += cipher.final('hex');
@@ -2263,28 +2391,58 @@ export class OnboardingController {
       const key = 'an example very very secret key.';
       const iv = Buffer.alloc(16, 0);
 
-      // Read and update config file
-      let configContents = fs.readFileSync(configFilePath, 'utf8');
-      const deviceId = 'null';
-      const encryptedDeviceId = this.encryptData(deviceId, key, iv);
-      const encryptedOrganizationId = this.encryptData(organization, key, iv);
+      // Prepare configuration values
+      const configValues = {
+        HOST_FOR_NEST:
+          'https://deploy-tracktime-nestjs-0kz7.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-zo6h.onrender.com/produce',
+        device_id: 'null',
+        token: 'null',
+        timeForUnpaidUser: '5',
+        organizationId: organization,
+        version: '1.0.0',
+        blurStatus: 'false',
+      };
 
-      const updatedConfig = configContents
-        .replace(/device_id=[^\n]*/gi, `device_id=${encryptedDeviceId}`)
-        .replace(
-          /organizationId=[^\n]*/gi,
-          `organizationId=${encryptedOrganizationId}`,
-        );
+      // Encrypt all configuration values
+      const encryptedConfig = {
+        HOST_FOR_NEST: this.encryptData(configValues.HOST_FOR_NEST, key, iv),
+        HOST_FOR_GO: this.encryptData(configValues.HOST_FOR_GO, key, iv),
+        device_id: this.encryptData(configValues.device_id, key, iv),
+        token: this.encryptData(configValues.token, key, iv),
+        timeForUnpaidUser: this.encryptData(
+          configValues.timeForUnpaidUser,
+          key,
+          iv,
+        ),
+        organizationId: this.encryptData(configValues.organizationId, key, iv),
+        version: this.encryptData(configValues.version, key, iv),
+        blurStatus: this.encryptData(configValues.blurStatus, key, iv),
+      };
 
-      // Write updated config back to file
+      // Create the complete configuration content
+      const updatedConfig = `organizationId=${encryptedConfig.organizationId}
+timeForUnpaidUser=${encryptedConfig.timeForUnpaidUser}
+device_id=${encryptedConfig.device_id}
+version=${encryptedConfig.version}
+HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}
+blurStatus=${encryptedConfig.blurStatus}
+token=${encryptedConfig.token}
+HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}`;
+
+      // Write updated config to file
       fs.writeFileSync(configFilePath, updatedConfig);
       console.log(`Config file updated successfully for ${selectedOS}`);
 
-      // Create zip file
-      const outputZipPath = path.join(
-        installerBasePath,
-        `${organization}_${selectedOS}_package.zip`,
-      );
+      // Create zip file with OS-specific naming
+      let zipFileName;
+      if (selectedOS === 'macos') {
+        zipFileName = `${organization}_macOS_package.zip`;
+      } else {
+        zipFileName = `${organization}_${selectedOS}_package.zip`;
+      }
+
+      const outputZipPath = path.join(installerBasePath, zipFileName);
 
       const output = fs.createWriteStream(outputZipPath);
       const archive = archiver('zip', { zlib: { level: 9 } });
@@ -2323,9 +2481,9 @@ export class OnboardingController {
         }
 
         try {
-          // Send the zip file
+          // Send the zip file with proper filename
           res.set({
-            'Content-Disposition': `attachment; filename="${organization}_${selectedOS}_package.zip"`,
+            'Content-Disposition': `attachment; filename="${zipFileName}"`,
             'Content-Type': 'application/zip',
             'Content-Length': fs.statSync(outputZipPath).size.toString(),
           });
@@ -2396,9 +2554,19 @@ export class OnboardingController {
           const stats = fs.statSync(filePath);
 
           if (stats.isFile()) {
-            // Read file and add to archive
-            const fileBuffer = fs.readFileSync(filePath);
-            archive.append(fileBuffer, { name: file });
+            // Special handling for macOS binary file
+            if (selectedOS === 'macos' && file === 'trackTime') {
+              // For macOS binary, preserve executable permissions in the archive
+              const fileBuffer = fs.readFileSync(filePath);
+              archive.append(fileBuffer, {
+                name: file,
+                mode: 0o755, // Executable permissions for macOS binary
+              });
+            } else {
+              // Regular file handling
+              const fileBuffer = fs.readFileSync(filePath);
+              archive.append(fileBuffer, { name: file });
+            }
             filesAdded++;
             console.log(
               `Added file ${filesAdded}/${totalFiles}: ${file} (${stats.size} bytes)`,
@@ -2656,7 +2824,7 @@ export class OnboardingController {
     @Res() res: Response,
     @Req() req: Request,
   ): Promise<Response> {
-    try { 
+    try {
       const organizationAdminId = req.headers['organizationAdminId'];
       // console.log("organizationAdmin: " + organizationAdminId)
       const organizationAdminIdString = Array.isArray(organizationAdminId)
