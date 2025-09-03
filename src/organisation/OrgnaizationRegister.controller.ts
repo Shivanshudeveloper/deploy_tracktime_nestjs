@@ -61,12 +61,10 @@ export class OrganizationAdminController {
       return res.status(403).send({ message: 'Admin creattion failed' });
     }
 
-    return res
-      .status(200)
-      .send({
-        message: 'Organization Admin created successfully!',
-        token: newAdmin?.token,
-      });
+    return res.status(200).send({
+      message: 'Organization Admin created successfully!',
+      token: newAdmin?.token,
+    });
   }
 
   @Post('/organization/u/validateToken')
@@ -124,15 +122,198 @@ export class OrganizationAdminController {
       return res.status(404).send({ message: 'Incorrect email or password' });
     }
 
-    return res
-      .status(200)
-      .send({
-        message: 'OrganizationAdmin Logged in succesfully !!',
-        token: newAdmin?.token,
-      });
+    return res.status(200).send({
+      message: 'OrganizationAdmin Logged in succesfully !!',
+      token: newAdmin?.token,
+    });
   }
 
-  // Add this method to your OrganizationAdminController class
+  @Post('organization/forgot-password')
+  async forgotPassword(
+    @Body() body: { email: string },
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const { email } = body;
 
+      if (!email) {
+        return res.status(400).json({
+          message: 'Email is required',
+          success: false,
+        });
+      }
 
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          message: 'Invalid email format',
+          success: false,
+        });
+      }
+
+      const result =
+        await this.organizationAdminService.initiatePasswordReset(email);
+
+      if (!result.success) {
+        return res.status(result.statusCode || 404).json({
+          message: result.message,
+          success: false,
+        });
+      }
+
+      return res.status(200).json({
+        message: 'OTP sent successfully to your email',
+        success: true,
+        data: {
+          email: result.email,
+          otpExpiry: result.otpExpiry,
+        },
+      });
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      return res.status(500).json({
+        message: 'Failed to process forgot password request',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Post('organization/verify-otp')
+  async verifyOTP(
+    @Body() body: { email: string; otp: string },
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const { email, otp } = body;
+
+      if (!email || !otp) {
+        return res.status(400).json({
+          message: 'Email and OTP are required',
+          success: false,
+        });
+      }
+
+      const result = await this.organizationAdminService.verifyPasswordResetOTP(
+        email,
+        otp,
+      );
+
+      if (!result.success) {
+        return res.status(result.statusCode || 400).json({
+          message: result.message,
+          success: false,
+        });
+      }
+
+      return res.status(200).json({
+        message: 'OTP verified successfully',
+        success: true,
+        data: {
+          resetToken: result.resetToken,
+          email: email,
+        },
+      });
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      return res.status(500).json({
+        message: 'Failed to verify OTP',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Post('organization/reset-password')
+  async resetPassword(
+    @Body() body: { email: string; resetToken: string; newPassword: string },
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const { email, resetToken, newPassword } = body;
+
+      if (!email || !resetToken || !newPassword) {
+        return res.status(400).json({
+          message: 'All fields are required',
+          success: false,
+        });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({
+          message: 'Password must be at least 6 characters long',
+          success: false,
+        });
+      }
+      console.log(email,resetToken,newPassword);
+      
+      const result = await this.organizationAdminService.resetPassword(
+        email,
+        resetToken,
+        newPassword,
+      );
+
+      if (!result.success) {
+        return res.status(result.statusCode || 400).json({
+          message: result.message,
+          success: false,
+        });
+      }
+
+      return res.status(200).json({
+        message: 'Password reset successfully',
+        success: true,
+      });
+    } catch (error) {
+      console.error('Password reset error:', error);
+      return res.status(500).json({
+        message: 'Failed to reset password',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Post('organization/resend-otp')
+  async resendOTP(
+    @Body() body: { email: string },
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const { email } = body;
+
+      if (!email) {
+        return res.status(400).json({
+          message: 'Email is required',
+          success: false,
+        });
+      }
+
+      const result =
+        await this.organizationAdminService.resendPasswordResetOTP(email);
+
+      if (!result.success) {
+        return res.status(result.statusCode || 400).json({
+          message: result.message,
+          success: false,
+        });
+      }
+
+      return res.status(200).json({
+        message: 'OTP resent successfully',
+        success: true,
+        data: {
+          email: result.email,
+          otpExpiry: result.otpExpiry,
+        },
+      });
+    } catch (error) {
+      console.error('Resend OTP error:', error);
+      return res.status(500).json({
+        message: 'Failed to resend OTP',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
 }

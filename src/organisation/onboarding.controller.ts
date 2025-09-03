@@ -1915,10 +1915,14 @@ export class OnboardingController {
     @Res() res: Response,
     @Req() req: Request,
   ): Promise<any> {
-    const organizationAdminId = req.headers['organizationAdminId'];
+    const data = req.body;
+    console.log(userData,"userData")
+    const organizationAdminId = req.headers['organizationAdminId'] as string;
+
     const organizationAdminIdString = Array.isArray(organizationAdminId)
       ? organizationAdminId[0]
       : organizationAdminId;
+
     const OrganizationId =
       await this.organizationAdminService.findOrganizationById(
         organizationAdminIdString,

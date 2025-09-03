@@ -8,7 +8,7 @@ export class AuthMiddleware implements NestMiddleware {
 
   async use(req: Request, res: Response, next: NextFunction) {
     const excludedRoutes = ['/auth/login', '/auth/register',"/auth/download","/auth/version"];
-   
+   console.log(req?.originalUrl,excludedRoutes.includes(req?.originalUrl));
     if (excludedRoutes.includes(req.originalUrl)) {
       // Exclude routes that   don't require authentication
       console.log('Excluded routes')

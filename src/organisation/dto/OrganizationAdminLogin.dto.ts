@@ -9,6 +9,4 @@ export class LoginAdminOrganization {
   @IsString()
   password: string;
 
-
-
 }
