@@ -51,10 +51,11 @@ export class TeamAndTeamMemberController {
   // async getTeam(): Promise<Teams[]> {
   //   return this.teamAndTeamMemberService.getTeam();
   // }
-  // @Put('/updateteam/:id')
-  // updateById(@Param('id') id: UUID, @Body() dto: CreateTeamDTO) {
-  //   return this.teamAndTeamMemberService.updateById(id, dto);
-  // }
+  @Put('/updateteam/:id')
+  updateById(@Param('id') id: UUID, @Body() dto: CreateTeamDTO) {
+    return this.teamAndTeamMemberService.updateById(id, dto);
+  }
+  
   @Delete('/deleteteam/:id')
   deleteById(@Param('id') id: UUID) {
     return this.teamAndTeamMemberService.deleteById(id);
@@ -86,6 +87,14 @@ export class TeamAndTeamMemberController {
   deleteTeamMembersById(@Param('id') id: UUID) {
     return this.teamAndTeamMemberService.deleteTeamMembersById(id);
   }
+
+  @Delete('/deleteteammember/:teamId/:userId')
+  deleteTeamMemberByUserAndTeam(
+    @Param('teamId') teamId: UUID,
+    @Param('userId') userId: UUID,
+  ) {
+    return this.teamAndTeamMemberService.deleteTeamMemberByUserAndTeam(teamId, userId);
+  }
   //users
   @Post('/registeruser')
   async registerUser(
@@ -104,7 +113,7 @@ export class TeamAndTeamMemberController {
   @Delete('/deleteuser/:id')
   deleteUserById(@Param('id') id: UUID) {
     return this.teamAndTeamMemberService.deleteUserById(id);
-  }
+  } 
   //organization
   @Put('/updateorg/:id')
   async updateOrganizationById(

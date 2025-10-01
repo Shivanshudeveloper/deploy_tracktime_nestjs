@@ -1960,6 +1960,33 @@ private generateAttendanceText(
       return null;
     }
   }
+
+  /**
+   * Update organization logo with Wasabi URL
+   */
+  async updateOrganizationLogo(
+    organizationId: string,
+    logoUrl: string,
+  ): Promise<boolean> {
+    try {
+      const organization = await this.organizationRepository.findOne({
+        where: { id: organizationId },
+      });
+
+      if (!organization) {
+        throw new NotFoundException('Organization not found');
+      }
+
+      organization.logo = logoUrl;
+      await this.organizationRepository.save(organization);
+
+      this.logger.log(`✅ Organization logo updated: ${organizationId} -> ${logoUrl}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`❌ Error updating organization logo: ${error.message}`);
+      throw new BadRequestException(`Error updating organization logo: ${error.message}`);
+    }
+  }
   async fetchScreenShot(): Promise<any[]> {
     // const bucketName = process.env.WASABI_BUCKET_NAME;
     const bucketName = this.ConfigureService.get<string>('WASABI_BUCKET_NAME');

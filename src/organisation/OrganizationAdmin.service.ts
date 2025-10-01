@@ -53,6 +53,31 @@ export class organizationAdminService {
   }
 
   /**
+   * Update admin profile logo (Wasabi URL)
+   */
+  async updateAdminProfileLogo(
+    adminId: string,
+    logoUrl: string,
+  ): Promise<boolean> {
+    try {
+      const admin = await this.validateOrganizationAdminWithId(adminId);
+      if (!admin) {
+        throw new BadRequestException('Admin not found');
+      }
+
+      // Update avatar field with Wasabi URL
+      admin.avatar = logoUrl;
+      await this.organizationAdminRepository.save(admin);
+
+      console.log(`✅ Admin profile logo updated: ${adminId} -> ${logoUrl}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error updating admin profile logo:', error);
+      throw new BadRequestException(`Error updating profile logo: ${error.message}`);
+    }
+  }
+
+  /**
    * Update organization logo
    */
   async updateOrganizationLogo(

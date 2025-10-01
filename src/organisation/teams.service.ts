@@ -32,6 +32,7 @@ import { Organization } from './organisation.entity';
 import { Team } from './team.entity';
 import { User } from 'src/users/user.entity';
 import { CreateUserDTO } from './dto/users.dto';
+import { PolicyTeams } from './policy_team.entity';
 @Injectable()
 export class teamAndTeamMemberService {
   constructor(
@@ -39,6 +40,8 @@ export class teamAndTeamMemberService {
     private teamRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMemberRepository: Repository<TeamMember>,
+    @InjectRepository(PolicyTeams)
+    private policyTeamsRepository: Repository<PolicyTeams>,
     @InjectRepository(User)
     private registeredUserRepository: Repository<User>,
     @InjectRepository(Organization)
@@ -80,13 +83,44 @@ export class teamAndTeamMemberService {
   async getTeam(): Promise<Team[]> {
     return this.teamRepository.find();
   }
-  // async updateById(team_uuid: UUID, dto: CreateTeamDTO) {
-  //   await this.teamRepository.update(team_uuid, dto);
-  //   return this.teamRepository.findOne({ where: { team_uuid } });
-  // }
+  async updateById(team_uuid: UUID, dto: CreateTeamDTO) {
+    await this.teamRepository.update(team_uuid, dto);
+    return this.teamRepository.findOne({ where: { id:team_uuid } });
+  }
   async deleteById(team_uuid: UUID) {
-    this.teamMemberRepository.delete({ team_uuid });
-    return await this.teamRepository.delete({  });
+    try {
+      console.log(`Deleting team with ID: ${team_uuid}`);
+      
+      // Step 1: Delete all policy_teams entries for this team
+      await this.policyTeamsRepository
+        .createQueryBuilder()
+        .delete()
+        .from(PolicyTeams)
+        .where('team_id = :team_uuid', { team_uuid })
+        .execute();
+      console.log('Deleted policy_teams entries');
+      
+      // Step 2: Delete all team members associated with this team
+      await this.teamMemberRepository.delete({ team_uuid });
+      console.log('Deleted team members');
+      
+      // Step 3: Delete the team itself
+      const result = await this.teamRepository.delete({ id: team_uuid });
+      console.log('Deleted team:', result);
+      
+      if (result.affected === 0) {
+        throw new Error('Team not found');
+      }
+      
+      return { 
+        success: true, 
+        message: 'Team deleted successfully',
+        affected: result.affected 
+      };
+    } catch (error) {
+      console.error('Error deleting team:', error);
+      throw new Error(`Failed to delete team: ${error.message}`);
+    }
   }
   async getTeamDetailsByTeamId(team_uuid: string): Promise<Team[]> {
     console.log(`getTeamDetails called with team_uuid: ${team_uuid}`);
@@ -136,7 +170,70 @@ export class teamAndTeamMemberService {
     return this.teamMemberRepository.findOne({ where: { member_uuid } });
   }
   async deleteTeamMembersById(member_uuid: UUID) {
-    return await this.teamMemberRepository.delete({ member_uuid });
+    try {
+      console.log('🗑️ deleteTeamMembersById called with:', member_uuid);
+      
+      if (!member_uuid ) {
+        throw new Error('Invalid member UUID provided');
+      }
+      
+      const result = await this.teamMemberRepository.delete({ member_uuid });
+      console.log('✅ Delete result:', result);
+      
+      return {
+        success: true,
+        message: 'Team member deleted successfully',
+        affected: result.affected
+      };
+    } catch (error) {
+      console.error('❌ Error deleting team member:', error);
+      throw new Error(`Failed to delete team member: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete team member by user_uuid and team_uuid
+   * This is useful when you have user and team IDs but not the member_uuid
+   */
+  async deleteTeamMemberByUserAndTeam(team_uuid: UUID, user_uuid: UUID) {
+    try {
+      console.log('🗑️ deleteTeamMemberByUserAndTeam called with:');
+      console.log('  - Team UUID:', team_uuid);
+      console.log('  - User UUID:', user_uuid);
+      
+      if (!team_uuid) {
+        throw new Error('Invalid team UUID provided');
+      }
+      
+      if (!user_uuid ) {
+        throw new Error('Invalid user UUID provided');
+      }
+      
+      // Use QueryBuilder for more reliable deletion with composite conditions
+      const result = await this.teamMemberRepository
+        .createQueryBuilder()
+        .delete()
+        .from(TeamMember)
+        .where('team_uuid = :team_uuid', { team_uuid })
+        .andWhere('user_uuid = :user_uuid', { user_uuid })
+        .execute();
+      
+      console.log('✅ Delete result:', result);
+      
+      if (result.affected === 0) {
+        console.log('⚠️ No team member found with team_uuid:', team_uuid, 'and user_uuid:', user_uuid);
+        throw new Error('Team member not found in this team');
+      }
+      
+      return {
+        success: true,
+        message: 'Team member removed from team successfully',
+        affected: result.affected
+      };
+    } catch (error) {
+      console.error('❌ Error deleting team member by user and team:', error);
+      throw new Error(`Failed to remove team member: ${error.message}`);
+    }
   }
   //users
   async registerUser(

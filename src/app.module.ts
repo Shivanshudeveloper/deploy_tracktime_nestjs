@@ -38,6 +38,7 @@ import { ConfigService } from '@nestjs/config';
 import { organizationAdminService } from './organisation/OrganizationAdmin.service';
 import { OrganizationAdminController } from './organisation/OrgnaizationRegister.controller';
 import { CreateOrganizationAdmin } from './organisation/OrganizationAdmin.entity';
+import { WasabiUploadService } from './organisation/wasabi-upload.service';
 import { OnbaordingAuthMiddleware } from './middleware/OnboardingAuth.middleware'; 
 import { CalculatedLogic } from './organisation/calculatedLogic.entity';
 import { TrackingWeekdays } from './organisation/tracking_weekdays.entity';
@@ -97,6 +98,7 @@ import { PolicyUsers } from './organisation/policy_user.entity';
     teamAndTeamMemberService,
     ConfigService,
     organizationAdminService,
+    WasabiUploadService,
   ],
 })
 

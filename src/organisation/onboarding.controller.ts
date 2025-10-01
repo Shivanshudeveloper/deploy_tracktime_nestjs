@@ -53,6 +53,8 @@ import {
   AdminProfileResponseDto,
   UpdateAdminProfileDto,
 } from './dto/adminProfile.dto';
+import { WasabiUploadService } from './wasabi-upload.service';
+
 @Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name);
@@ -61,6 +63,7 @@ export class OnboardingController {
     private readonly userService: AuthService,
     private readonly jwtService: JwtService,
     private readonly organizationAdminService: organizationAdminService,
+    private readonly wasabiUploadService: WasabiUploadService,
   ) {}
 
   @Post('organization/register')
@@ -295,6 +298,232 @@ export class OnboardingController {
       console.error('Error uploading avatar:', error);
       return res.status(500).json({
         message: 'Failed to upload avatar',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Post('admin/upload-profile-logo-wasabi')
+  @UseInterceptors(
+    FileInterceptor('logo', {
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
+          return cb(new Error('Only image files are allowed!'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
+    }),
+  )
+  async uploadProfileLogoToWasabi(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      const organizationAdminId = req.headers['organizationadminid'] as string;
+      const organizationAdminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      if (!organizationAdminIdString) {
+        return res.status(400).json({
+          message: 'Organization Admin ID is required',
+          success: false,
+        });
+      }
+
+      if (!file) {
+        return res.status(400).json({
+          message: 'No file uploaded',
+          success: false,
+        });
+      }
+
+      this.logger.log(`🖼️ Uploading profile logo for admin: ${organizationAdminIdString}`);
+
+      // Upload to Wasabi with WebP optimization
+      const uploadResult = await this.wasabiUploadService.uploadProfileLogo(
+        file,
+        organizationAdminIdString,
+      );
+
+      // Update admin profile logo in database with WebP object key
+      await this.organizationAdminService.updateAdminProfileLogo(
+        organizationAdminIdString,
+        uploadResult.objectKey, // Store the object key, not the URL
+      );
+
+      return res.status(200).json({
+        message: 'Profile logo uploaded successfully',
+        success: true,
+        logoUrl: uploadResult.webpUrl,
+        originalUrl: uploadResult.originalUrl,
+        objectKey: uploadResult.objectKey,
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to upload profile logo: ${error.message}`);
+      return res.status(500).json({
+        message: 'Failed to upload profile logo',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Get('admin/profile-logo-signed-url/:adminId')
+  async getProfileLogoSignedUrl(
+    @Param('adminId') adminId: string,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      // Get the object key from database
+      const adminProfile = await this.organizationAdminService.getAdminProfileData(adminId);
+      
+      if (!adminProfile || !adminProfile.avatar) {
+        return res.status(404).json({
+          message: 'Profile logo not found',
+          success: false,
+        });
+      }
+
+      // Generate signed URL
+      const signedUrl = await this.wasabiUploadService.getProfileLogoSignedUrl(adminProfile.avatar);
+
+      return res.status(200).json({
+        message: 'Profile logo signed URL generated successfully',
+        success: true,
+        signedUrl,
+        objectKey: adminProfile.avatar,
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to generate profile logo signed URL: ${error.message}`);
+      return res.status(500).json({
+        message: 'Failed to generate profile logo signed URL',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Get('organization/logo-signed-url/:organizationId')
+  async getOrganizationLogoSignedUrl(
+    @Param('organizationId') organizationId: string,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      // Get the organization logo object key from database
+      const organization = await this.onboardingService.getOrganizationDetails(organizationId);
+      
+      if (!organization || !organization.logo) {
+        return res.status(404).json({
+          message: 'Organization logo not found',
+          success: false,
+        });
+      }
+
+      // Generate signed URL
+      const signedUrl = await this.wasabiUploadService.getOrganizationLogoSignedUrl(organization.logo);
+
+      return res.status(200).json({
+        message: 'Organization logo signed URL generated successfully',
+        success: true,
+        signedUrl,
+        objectKey: organization.logo,
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to generate organization logo signed URL: ${error.message}`);
+      return res.status(500).json({
+        message: 'Failed to generate organization logo signed URL',
+        error: error.message,
+        success: false,
+      });
+    }
+  }
+
+  @Post('organization/upload-logo-wasabi')
+  @UseInterceptors(
+    FileInterceptor('logo', {
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
+          return cb(new Error('Only image files are allowed!'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
+    }),
+  )
+  async uploadOrganizationLogoToWasabi(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<any> {
+    try {
+      // HTTP headers are case-insensitive and get converted to lowercase by Express
+      const organizationAdminId = req.headers['organizationadminid'] as string;
+      const adminIdString = Array.isArray(organizationAdminId)
+        ? organizationAdminId[0]
+        : organizationAdminId;
+
+      this.logger.log(`📋 Received organizationAdminId from headers: ${adminIdString}`);
+
+      if (!adminIdString || adminIdString === 'null' || adminIdString === 'undefined') {
+        this.logger.error(`❌ Invalid admin ID: ${adminIdString}`);
+        return res.status(400).json({
+          message: 'Valid Organization Admin ID is required in headers',
+          success: false,
+        });
+      }
+
+      if (!file) {
+        return res.status(400).json({
+          message: 'No file uploaded',
+          success: false,
+        });
+      }
+
+      this.logger.log(`🖼️ Uploading organization logo for admin: ${adminIdString}`);
+
+      // Get organization ID from admin ID
+      const organizationId = await this.organizationAdminService.findOrganizationById(adminIdString);
+      
+      if (!organizationId) {
+        return res.status(404).json({
+          message: 'Organization not found for this admin',
+          success: false,
+        });
+      }
+
+      this.logger.log(`📋 Found organization ID: ${organizationId}`);
+
+      // Upload to Wasabi with WebP optimization
+      const uploadResult = await this.wasabiUploadService.uploadOrganizationLogo(
+        file,
+        organizationId,
+      );
+
+      // Update organization logo in database with WebP object key
+      await this.onboardingService.updateOrganizationLogo(
+        organizationId,
+        uploadResult.objectKey, // Store the object key, not the URL
+      );
+
+      return res.status(200).json({
+        message: 'Organization logo uploaded successfully',
+        success: true,
+        logoUrl: uploadResult.webpUrl,
+        originalUrl: uploadResult.originalUrl,
+        objectKey: uploadResult.objectKey,
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to upload organization logo: ${error.message}`);
+      return res.status(500).json({
+        message: 'Failed to upload organization logo',
         error: error.message,
         success: false,
       });
@@ -2130,7 +2359,6 @@ HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}`;
         archive.on('error', reject);
 
         archive.pipe(output);
-
         // Add files to archive
         const files = fs.readdirSync(osInstallerPath);
         for (const file of files) {
@@ -2186,7 +2414,7 @@ HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}`;
     // Validate required fields
     if (!macAddress || !organizationId || !username) {
       this.logger.warn('Validation failed: Missing required fields');
-      throw new HttpException(
+      throw new HttpException( 
         'All fields are required',
         HttpStatus.BAD_REQUEST,
       );
@@ -2237,16 +2465,21 @@ HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}`;
       }
 
       // Step 4: Retrieve User Config
-      const userConfig = await this.onboardingService.getUserConfig(
+      let userConfig = await this.onboardingService.getUserConfig(
         deviceIdOrNew,
         organizationId,
       );
+       console.log('userConfig', userConfig);
 
       if (!userConfig) {
-        this.logger.warn('User configuration not found');
-        return res
-          .status(404)
-          .json({ message: 'User configuration not found' });
+        // this.logger.warn('User configuration not found');
+        userConfig = {
+          "isPaid": false,
+          "trackTimeStatus": "Resume"
+        }; // temeprory fix
+        // return res
+        //   .status(404)
+        //   .json({ message: 'User configuration not found' });
       }
 
       // Step 5: Getting Paid status for the organization
@@ -2272,7 +2505,7 @@ HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}`;
           isPaid: isPaidStatus,
         },
       };
-
+ 
       this.logger.log(`FinalData ${JSON.stringify(finalData)}`);
       return res.status(200).json(finalData);
     } catch (error) {
