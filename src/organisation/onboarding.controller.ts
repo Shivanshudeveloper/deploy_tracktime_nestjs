@@ -2207,11 +2207,17 @@ export class OnboardingController {
 
       let isUserExist = await this.onboardingService.ValidateUserByGmail(
         userData?.email,
+        organizationId,
       );
+      
       if (!isUserExist?.email) {
+        // User doesn't exist in this organization, create new user
         userData['organizationId'] = organizationId;
         isUserExist = await this.userService.registerUser({ ...userData });
         console.log('User registered here...');
+      } else {
+        // User already exists in this organization, return existing user with installer
+        console.log('User already exists in this organization, providing installer with existing config...');
       }
 
       const uniqueDeviceCreation =
@@ -2648,17 +2654,38 @@ isPaid=${encryptedConfig.isPaid}`;
       let finalUserName = 'anonymous';
 
       if (userType === 'existing' && userName) {
-        // For existing user, find the user and get their device info
-        const user = await this.onboardingService.findUserByUuid(userName as string, organization);
-        if (user) {
-          userId = user.userUUID;
-          finalUserName = user.userName || user.email || 'existing_user';
+        // For existing user, find the user by email (extracted from display name)
+        const userDisplayName = decodeURIComponent(userName as string);
+        console.log('Processing existing user:', userDisplayName);
+        
+        // Extract email from display name format: "(email) - Status"
+        const emailMatch = userDisplayName.match(/\(([^)]+)\)/);
+        if (emailMatch) {
+          const userEmail = emailMatch[1];
+          console.log('Extracted email:', userEmail);
           
-          // Find user's device
-          const userDevice = await this.onboardingService.findDeviceByUserId(userId, organization);
-          if (userDevice) {
-            deviceId = userDevice.device_uid;
+          try {
+            const user = await this.onboardingService.findUserByEmail(userEmail, organization);
+            if (user) {
+              userId = user.userUUID;
+              finalUserName = user.userName || user.email || 'existing_user';
+              
+              // Find user's device
+              const userDevice = await this.onboardingService.findDeviceByUserId(userId, organization);
+              if (userDevice) {
+                deviceId = userDevice.device_uid;
+              }
+            } else {
+              this.logger.warn(`User not found for email: ${userEmail} in organization: ${organization}`);
+              return res.status(404).json({ error: `User not found for email: ${userEmail}` });
+            }
+          } catch (error) {
+            this.logger.error('Error finding existing user:', error);
+            return res.status(500).json({ error: 'Failed to find existing user' });
           }
+        } else {
+          this.logger.warn(`Invalid user display name format: ${userDisplayName}`);
+          return res.status(400).json({ error: 'Invalid user display name format' });
         }
       } else if (userType === 'new' && userName && userEmail) {
         // Create new user and device
@@ -2744,10 +2771,12 @@ isPaid=${encryptedConfig.isPaid}`;
       let isPaid = 'false';
 
       if (userType === 'existing' && userName) {
-        // For existing user, get their actual settings
-        const user = await this.onboardingService.findUserByUuid(userName as string, organization);
-        if (user && user.config) {
-          trackTimeStatus = user.config.trackTimeStatus || 'Resume';
+        // For existing user, get their actual settings using the userId we already found
+        if (userId && userId !== 'null') {
+          const user = await this.onboardingService.findUserByUuid(userId, organization);
+          if (user && user.config) {
+            trackTimeStatus = user.config.trackTimeStatus || 'Resume';
+          }
         }
         // Get blur status from user's device/policy
         blurStatus = 'false'; // Default, can be enhanced later
@@ -2853,23 +2882,23 @@ user_name=${encryptedConfig.user_name}`;
       this.logger.log(`Creating custom Windows installer for organization: ${orgName}`);
   
       // 1. Define paths
-      const preBuiltInstallerPath = path.join(osInstallerPath, 'prebuilt_installer.exe');
+      const installerExePath = path.join(osInstallerPath, 'tracktimeInstaller.exe');
       const customizedInstallerName = `${orgName}_tracktime_setup.zip`;
       const customizedInstallerPath = path.join(installerBasePath, customizedInstallerName);
-  
-      // 2. Check if pre-built installer exists
-      if (!fs.existsSync(preBuiltInstallerPath)) {
-        this.logger.error(`Pre-built installer not found at: ${preBuiltInstallerPath}`);
+
+      // 2. Check if installer exists
+      if (!fs.existsSync(installerExePath)) {
+        this.logger.error(`Installer not found at: ${installerExePath}`);
         return res.status(404).json({ 
-          error: 'Pre-built Windows installer not found on server.' 
+          error: 'Windows installer not found on server.' 
         });
       }
-  
+
       // 3. Create a new ZIP package containing the installer and config
       const zip = new AdmZip();
 
-      // 4. Add the pre-built installer to the ZIP
-      zip.addLocalFile(preBuiltInstallerPath, '', 'tracktime_setup.exe');
+      // 4. Add the installer to the ZIP
+      zip.addLocalFile(installerExePath, '', 'tracktimeInstaller.exe');
 
       // 5. Add the customized config file
       zip.addFile('dev_config.txt', Buffer.from(updatedConfig, 'utf8'));
@@ -2879,7 +2908,7 @@ user_name=${encryptedConfig.user_name}`;
 
 Installation Instructions:
 1. Extract this ZIP file to a folder on your computer
-2. Run 'tracktime_setup.exe' as Administrator
+2. Run 'tracktimeInstaller.exe' as Administrator
 3. Follow the installation wizard
 4. The application will be configured automatically with your organization settings
 

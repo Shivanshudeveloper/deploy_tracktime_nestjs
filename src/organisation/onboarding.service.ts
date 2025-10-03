@@ -33,6 +33,7 @@ import { TrackingHolidays } from './tracking_holidays.entity';
 import { TrackingWeekdays } from './tracking_weekdays.entity';
 import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
 import { organizationAdminService } from './OrganizationAdmin.service';
+import { CreateOrganizationAdmin } from './OrganizationAdmin.entity';
 import { ProductivitySettingEntity } from './prodsetting.entity';
 import { Resend } from 'resend';
 import * as ExcelJS from 'exceljs';
@@ -179,6 +180,8 @@ export class OnboardingService {
     private TrackProdSettingsRepository: Repository<ProductivitySettingEntity>,
     @InjectRepository(CalculatedLogic)
     private calculatedLogicRepository: Repository<CalculatedLogic>,
+    @InjectRepository(CreateOrganizationAdmin)
+    private organizationAdminRepository: Repository<CreateOrganizationAdmin>,
   ) {
     this.s3 = new S3({
       endpoint: this.ConfigureService.get<string>('WASABI_ENDPOINT'),
@@ -2064,20 +2067,24 @@ private generateAttendanceText(
     // If organizationAdminId is provided, check for organization with same name 
     // that belongs to the same admin (to prevent duplicate orgs for same admin)
     if (organizationAdminId) {
-      let isOrganization = await this.organizationRepository.findOne({
-        where: { name },
-        relations: ['organizationAdmins']
+      // First find the admin to get their organization ID
+      const admin = await this.organizationAdminRepository.findOne({
+        where: { id: organizationAdminId }
       });
       
-      // Check if this organization belongs to the current admin
-      if (isOrganization && isOrganization.organizationAdmins) {
-        const belongsToCurrentAdmin = isOrganization.organizationAdmins.some(
-          admin => admin.id === organizationAdminId
-        );
-        return belongsToCurrentAdmin ? isOrganization : null;
+      if (!admin || !admin.OrganizationId) {
+        return null;
       }
       
-      return null;
+      // Check if organization with same name exists and belongs to this admin
+      let isOrganization = await this.organizationRepository.findOne({
+        where: { 
+          name,
+          id: admin.OrganizationId
+        }
+      });
+      
+      return isOrganization;
     }
     
     // Fallback to original logic if no admin ID provided
@@ -3081,8 +3088,20 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
       throw new BadRequestException(`Error:- ${error}`);
     }
   }
-  async ValidateUserByGmail(email: string) {
+  async ValidateUserByGmail(email: string, organizationId?: string) {
     try {
+      // If organizationId is provided, check for user with same email within the same organization
+      if (organizationId) {
+        let user = await this.userRepository.findOne({ 
+          where: { 
+            email: email,
+            organizationId: organizationId 
+          } 
+        });
+        return user;
+      }
+      
+      // Fallback to original logic - check globally (for backward compatibility)
       let user = await this.userRepository.findOne({ where: { email: email } });
       return user;
     } catch (err) {
@@ -4088,6 +4107,26 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
     } catch (error) {
       console.error('Error in findUserByUuid:', error);
       throw new Error('Failed to find user by UUID');
+    }
+  }
+
+  async findUserByEmail(email: string, organization: string): Promise<User> {
+    try {
+      console.log('Finding user by email:', email, 'for organization:', organization);
+      
+      const user = await this.userRepository.findOne({
+        where: { 
+          email: email,
+          organizationId: organization 
+        },
+        relations: ['team'],
+      });
+
+      console.log('User find by email result:', user ? 'Found' : 'Not found');
+      return user;
+    } catch (error) {
+      console.error('Error in findUserByEmail:', error);
+      throw new Error('Failed to find user by email');
     }
   }
 

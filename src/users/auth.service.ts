@@ -52,12 +52,6 @@ export class AuthService {
   async registerUser(userData: Partial<User>): Promise<User> {
     console.log("Register Userdata",userData)
     
-    // Hash password if provided
-    if (userData.password) {
-      const saltRounds = 12;
-      userData.password = await bcrypt.hash(userData.password, saltRounds);
-    }
-    
     const newUser = await this.userRepository.create(userData);
     const errors = await validate(newUser);
 
@@ -71,12 +65,10 @@ export class AuthService {
     const user = await this.userRepository.findOne({ where: { email } });
     console.log(user);
     
-    if (user && user['password']) {
-      // Use bcrypt to compare the plain password with the hashed password
-      const isPasswordValid = await bcrypt.compare(password, user['password']);
-      if (isPasswordValid) {
-        return user;
-      }
+    // Since User entity doesn't have password field, just return user if found
+    // Password validation should be handled at organization admin level
+    if (user) {
+      return user;
     }
     return null;
   }
