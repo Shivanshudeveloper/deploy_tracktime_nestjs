@@ -392,8 +392,12 @@ export class organizationAdminService {
   ): Promise<any> {
     console.log(OrganizationAdmin);
     try {
+      // Hash the password before creating the user
+      const hashedPassword = await this.hashPassword(OrganizationAdmin.password);
+      
       let user = await this.organizationAdminRepository.create({
         ...OrganizationAdmin,
+        password: hashedPassword, // Use the hashed password
         OrganizationId: OrganizationAdmin?.OrganizationId || null,
         isAdmin: false,
       });
@@ -427,8 +431,8 @@ export class organizationAdminService {
         return null;
       }
 
-      // Use bcrypt to compare the plain password with the hashed password
-      const isPasswordValid = await bcrypt.compare(
+      // Use the consistent verifyPassword method
+      const isPasswordValid = await this.verifyPassword(
         organizationDTO.password,
         admin.password,
       );

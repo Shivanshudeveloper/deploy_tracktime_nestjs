@@ -6,6 +6,7 @@ import { User } from './user.entity';
 import { validate } from 'class-validator';
 import { JwtService } from '@nestjs/jwt';
 import { PaidUser } from './paid_users.entity';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 // private readonly ORY_API_BASE_URL = 'https://inspiring-liskov-jmmrgchi6n.projects.oryapis.com/';
@@ -50,6 +51,13 @@ export class AuthService {
   }
   async registerUser(userData: Partial<User>): Promise<User> {
     console.log("Register Userdata",userData)
+    
+    // Hash password if provided
+    if (userData.password) {
+      const saltRounds = 12;
+      userData.password = await bcrypt.hash(userData.password, saltRounds);
+    }
+    
     const newUser = await this.userRepository.create(userData);
     const errors = await validate(newUser);
 
@@ -62,8 +70,13 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<User | null> {
     const user = await this.userRepository.findOne({ where: { email } });
     console.log(user);
-    if (user && user['password'] === password) {
-      return user;
+    
+    if (user && user['password']) {
+      // Use bcrypt to compare the plain password with the hashed password
+      const isPasswordValid = await bcrypt.compare(password, user['password']);
+      if (isPasswordValid) {
+        return user;
+      }
     }
     return null;
   }

@@ -2060,14 +2060,30 @@ private generateAttendanceText(
     return savedDesktopApp;
   }
 
-  async findOrganization(name: string): Promise<Organization> {
+  async findOrganization(name: string, organizationAdminId?: string): Promise<Organization> {
+    // If organizationAdminId is provided, check for organization with same name 
+    // that belongs to the same admin (to prevent duplicate orgs for same admin)
+    if (organizationAdminId) {
+      let isOrganization = await this.organizationRepository.findOne({
+        where: { name },
+        relations: ['organizationAdmins']
+      });
+      
+      // Check if this organization belongs to the current admin
+      if (isOrganization && isOrganization.organizationAdmins) {
+        const belongsToCurrentAdmin = isOrganization.organizationAdmins.some(
+          admin => admin.id === organizationAdminId
+        );
+        return belongsToCurrentAdmin ? isOrganization : null;
+      }
+      
+      return null;
+    }
+    
+    // Fallback to original logic if no admin ID provided
     let isOrganization = await this.organizationRepository.findOne({
       where: { name },
     });
-    // if(isOrganization) {
-    //   // isOrganization = await this.organizationAdminService.findOrganization(isOrganization.id)
-    //   // return isOrganization.id;
-    // }
 
     return isOrganization;
   }
@@ -3982,6 +3998,175 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
     console.log('Screenshot', screenshotInterval);
 
     return screenshotInterval?.blurScreenshotsStatus || false;
+  }
+
+  // Missing methods implementation
+  async findFilteredDevices(organizationId: string): Promise<Devices[]> {
+    try {
+      console.log('Finding filtered devices for organization:', organizationId);
+      
+      // Get all devices for the organization
+      const devices = await this.devicesRepository.find({
+        where: { organization_uid: organizationId },
+        order: { created_at: 'DESC' },
+      });
+
+      console.log(`Found ${devices.length} total devices for organization ${organizationId}`);
+
+      // Filter devices based on criteria:
+      // 1. Devices with user_uid (not null)
+      // 2. Devices with activity/tracking data
+      const filteredDevices = [];
+      
+      for (const device of devices) {
+        let shouldInclude = false;
+        
+        // Check if device has user_uid
+        if (device.user_uid && device.user_uid.trim() !== '') {
+          shouldInclude = true;
+          console.log(`Device ${device.device_uid} included - has user_uid: ${device.user_uid}`);
+        } else {
+          // Check if device has activity/tracking data
+          // Activities are linked to devices via user_uid = device_uid
+          const activityCount = await this.userActivityRepository.count({
+            where: { user_uid: device.device_uid }
+          });
+          
+          if (activityCount > 0) {
+            shouldInclude = true;
+            console.log(`Device ${device.device_uid} included - has ${activityCount} activity records`);
+          } else {
+            console.log(`Device ${device.device_uid} excluded - no user_uid and no activity data`);
+          }
+        }
+        
+        if (shouldInclude) {
+          filteredDevices.push(device);
+        }
+      }
+
+      console.log(`Filtered to ${filteredDevices.length} devices for organization ${organizationId}`);
+      return filteredDevices;
+    } catch (error) {
+      console.error('Error in findFilteredDevices:', error);
+      throw new Error('Failed to fetch filtered devices');
+    }
+  }
+
+  async getUsersForDownload(organization: string): Promise<User[]> {
+    try {
+      console.log('Getting users for download for organization:', organization);
+      
+      const users = await this.userRepository.find({
+        where: { organizationId: organization },
+        order: { created_at: 'DESC' },
+        relations: ['team'],
+      });
+
+      console.log(`Found ${users.length} users for download for organization ${organization}`);
+      return users;
+    } catch (error) {
+      console.error('Error in getUsersForDownload:', error);
+      throw new Error('Failed to fetch users for download');
+    }
+  }
+
+  async findUserByUuid(userUuid: string, organization: string): Promise<User> {
+    try {
+      console.log('Finding user by UUID:', userUuid, 'for organization:', organization);
+      
+      const user = await this.userRepository.findOne({
+        where: { 
+          userUUID: userUuid,
+          organizationId: organization 
+        },
+        relations: ['team'],
+      });
+
+      console.log('User find by UUID result:', user ? 'Found' : 'Not found');
+      return user;
+    } catch (error) {
+      console.error('Error in findUserByUuid:', error);
+      throw new Error('Failed to find user by UUID');
+    }
+  }
+
+  async findDeviceByUserId(userId: string, organization: string): Promise<Devices> {
+    try {
+      console.log('Finding device by user ID:', userId, 'for organization:', organization);
+      
+      const device = await this.devicesRepository.findOne({
+        where: { 
+          user_uid: userId,
+          organization_uid: organization 
+        },
+        order: { created_at: 'DESC' },
+      });
+
+      console.log('Device find by user ID result:', device ? 'Found' : 'Not found');
+      return device;
+    } catch (error) {
+      console.error('Error in findDeviceByUserId:', error);
+      throw new Error('Failed to find device by user ID');
+    }
+  }
+
+  async createUser(userData: {
+    user_name: string;
+    email: string;
+    organizationId: string;
+    trackTimeStatus: TrackTimeStatus;
+  }): Promise<User> {
+    try {
+      console.log('Creating new user:', userData);
+      
+      const newUser = this.userRepository.create({
+        userName: userData.user_name,
+        email: userData.email,
+        organizationId: userData.organizationId,
+        config: {
+          trackTimeStatus: userData.trackTimeStatus
+        }
+      });
+
+      const savedUser = await this.userRepository.save(newUser);
+      console.log('User created successfully:', savedUser.userUUID);
+      
+      return savedUser;
+    } catch (error) {
+      console.error('Error in createUser:', error);
+      throw new Error('Failed to create user');
+    }
+  }
+
+  async createDevice(deviceData: {
+    device_name: string;
+    organization_uid: string;
+    user_name: string;
+    user_uid?: string;
+    mac_address?: string;
+    config?: any;
+  }): Promise<Devices> {
+    try {
+      console.log('Creating new device:', deviceData);
+      
+      const newDevice = this.devicesRepository.create({
+        device_name: deviceData.device_name,
+        organization_uid: deviceData.organization_uid,
+        user_name: deviceData.user_name,
+        user_uid: deviceData.user_uid || null,
+        mac_address: deviceData.mac_address || null,
+        config: deviceData.config || null
+      });
+
+      const savedDevice = await this.devicesRepository.save(newDevice);
+      console.log('Device created successfully:', savedDevice.device_uid);
+      
+      return savedDevice;
+    } catch (error) {
+      console.error('Error in createDevice:', error);
+      throw new Error('Failed to create device');
+    }
   }
 }
  
