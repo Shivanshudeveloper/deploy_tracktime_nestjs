@@ -46,6 +46,9 @@ import { TrackingHolidays } from './organisation/tracking_holidays.entity';
 import { ScreenshotSettings } from './organisation/screenshot_settings.entity';
 import { PolicyTeams } from './organisation/policy_team.entity';
 import { PolicyUsers } from './organisation/policy_user.entity';
+import { InstallerService } from './installer/installer.service';
+import { BuildStatusModule } from './build-status/build-status.module';
+import { NotificationModule } from './notifications/notification.module';
 
 
 @Module({
@@ -83,6 +86,8 @@ import { PolicyUsers } from './organisation/policy_user.entity';
       secret: 'crazy-secret',
       signOptions: { expiresIn: '24h' },
     }),
+    BuildStatusModule,
+    NotificationModule,
   ],
   controllers: [
     UserController,
@@ -99,6 +104,7 @@ import { PolicyUsers } from './organisation/policy_user.entity';
     ConfigService,
     organizationAdminService,
     WasabiUploadService,
+    InstallerService,
   ],
 })
 

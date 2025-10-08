@@ -136,7 +136,7 @@ const weekdayData = [
 
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
-export let DeployFlaskBaseApi = 'https://python-url-classification-xpdt.onrender.com'; 
+export let DeployFlaskBaseApi = 'https://python-url-classification-bs67.onrender.com'; 
 export let LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 // DeployFlaskBaseApi=LocalFlaskBaseApi;
 type UpdateConfigType = DeepPartial<User['config']>;
@@ -2881,26 +2881,32 @@ async checkDeviceIdExist(
 ): Promise<string> {
   try {
     const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
+    const cleanDeviceUserName = device_user_name && device_user_name.trim() !== '' ? device_user_name.trim().toLowerCase() : null;
     
-    if (!cleanMacAddress) {
+    if (!cleanMacAddress || !cleanDeviceUserName) {
+      this.logger.warn('Missing mac_address or device_user_name');
       return null;
     }
 
+    // Search by mac_address
     const isExist = await this.devicesRepository.findOne({
       where: { mac_address: cleanMacAddress },
     });
 
-    console.log('mac_address', cleanMacAddress);
-    console.log('device-user-name', device_user_name);
-    console.log('isExist', isExist);
+    this.logger.debug(`Checking device - mac_address: ${cleanMacAddress}, device_user_name: ${device_user_name}`);
+    this.logger.debug(`Found device: ${JSON.stringify(isExist)}`);
 
-    if (isExist?.user_name && device_user_name.toLowerCase()) {
+    // Verify both mac_address and device_name match
+    if (isExist && isExist.device_name && 
+        isExist.device_name.toLowerCase() === cleanDeviceUserName) {
+      this.logger.log(`Device found with matching mac_address and device_name: ${isExist.device_uid}`);
       return isExist.device_uid;
     }
 
+    this.logger.warn('Device not found or device_name mismatch');
     return null;
   } catch (err) {
-    console.log(err?.message);
+    this.logger.error(`Error in checkDeviceIdExist: ${err?.message}`, err?.stack);
     return null;
   }
 }
@@ -2914,6 +2920,7 @@ async checkDeviceIdExistWithDeviceId(
     // Clean the input parameters
     const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
     const cleanDeviceId = device_id && device_id.trim() !== '' ? device_id : null;
+    const cleanDeviceUserName = device_user_name && device_user_name.trim() !== '' ? device_user_name.trim() : null;
 
     // Build the where conditions dynamically
     const whereConditions: any[] = [];
@@ -2928,6 +2935,7 @@ async checkDeviceIdExistWithDeviceId(
 
     // If no valid conditions, return null
     if (whereConditions.length === 0) {
+      this.logger.warn('No valid conditions to search for device');
       return null;
     }
 
@@ -2936,7 +2944,15 @@ async checkDeviceIdExistWithDeviceId(
       where: whereConditions,
     });
 
-    // If device found by device_id but no mac_address, update it
+    if (!existingDevice) {
+      this.logger.warn(`No device found with provided conditions`);
+      return null;
+    }
+
+    // Track if updates are needed
+    let needsUpdate = false;
+
+    // Update mac_address if device found by device_id but no mac_address
     if (existingDevice && !existingDevice.mac_address && cleanMacAddress) {
       // Check if another device already has this mac_address
       const conflictingDevice = await this.devicesRepository.findOne({
@@ -2945,12 +2961,27 @@ async checkDeviceIdExistWithDeviceId(
 
       // Remove conflicting mac_address if found
       if (conflictingDevice && conflictingDevice.device_uid !== existingDevice.device_uid) {
+        this.logger.warn(`Removing conflicting mac_address from device: ${conflictingDevice.device_uid}`);
         conflictingDevice.mac_address = null;
         await this.devicesRepository.save(conflictingDevice);
       }
 
       existingDevice.mac_address = cleanMacAddress;
+      needsUpdate = true;
+      this.logger.log(`Updating mac_address for device: ${existingDevice.device_uid}`);
+    }
+
+    // Update device_name if provided and different
+    if (cleanDeviceUserName && existingDevice.device_name !== cleanDeviceUserName) {
+      existingDevice.device_name = cleanDeviceUserName;
+      needsUpdate = true;
+      this.logger.log(`Updating device_name to: ${cleanDeviceUserName} for device: ${existingDevice.device_uid}`);
+    }
+
+    // Save updates if any
+    if (needsUpdate) {
       await this.devicesRepository.save(existingDevice);
+      this.logger.log(`Device updated successfully: ${existingDevice.device_uid}`);
     }
 
     return existingDevice ? existingDevice.device_uid : null;

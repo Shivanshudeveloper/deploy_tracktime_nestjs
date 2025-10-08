@@ -55,6 +55,9 @@ import {
   UpdateAdminProfileDto,
 } from './dto/adminProfile.dto';
 import { WasabiUploadService } from './wasabi-upload.service';
+import { InstallerService } from 'src/installer/installer.service';
+import { BuildStatusService } from '../build-status/build-status.service';
+import { NotificationService } from '../notifications/notification.service';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -65,6 +68,9 @@ export class OnboardingController {
     private readonly jwtService: JwtService,
     private readonly organizationAdminService: organizationAdminService,
     private readonly wasabiUploadService: WasabiUploadService,
+    private readonly installerService: InstallerService,
+    private readonly buildStatusService: BuildStatusService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   @Post('organization/register')
@@ -345,7 +351,9 @@ export class OnboardingController {
         });
       }
 
-      this.logger.log(`🖼️ Uploading profile logo for admin: ${organizationAdminIdString}`);
+      this.logger.log(
+        `🖼️ Uploading profile logo for admin: ${organizationAdminIdString}`,
+      );
 
       // Upload to Wasabi with WebP optimization
       const uploadResult = await this.wasabiUploadService.uploadProfileLogo(
@@ -383,8 +391,9 @@ export class OnboardingController {
   ): Promise<any> {
     try {
       // Get the object key from database
-      const adminProfile = await this.organizationAdminService.getAdminProfileData(adminId);
-      
+      const adminProfile =
+        await this.organizationAdminService.getAdminProfileData(adminId);
+
       if (!adminProfile || !adminProfile.avatar) {
         return res.status(404).json({
           message: 'Profile logo not found',
@@ -393,7 +402,9 @@ export class OnboardingController {
       }
 
       // Generate signed URL
-      const signedUrl = await this.wasabiUploadService.getProfileLogoSignedUrl(adminProfile.avatar);
+      const signedUrl = await this.wasabiUploadService.getProfileLogoSignedUrl(
+        adminProfile.avatar,
+      );
 
       return res.status(200).json({
         message: 'Profile logo signed URL generated successfully',
@@ -402,7 +413,9 @@ export class OnboardingController {
         objectKey: adminProfile.avatar,
       });
     } catch (error) {
-      this.logger.error(`❌ Failed to generate profile logo signed URL: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to generate profile logo signed URL: ${error.message}`,
+      );
       return res.status(500).json({
         message: 'Failed to generate profile logo signed URL',
         error: error.message,
@@ -418,8 +431,9 @@ export class OnboardingController {
   ): Promise<any> {
     try {
       // Get the organization logo object key from database
-      const organization = await this.onboardingService.getOrganizationDetails(organizationId);
-      
+      const organization =
+        await this.onboardingService.getOrganizationDetails(organizationId);
+
       if (!organization || !organization.logo) {
         return res.status(404).json({
           message: 'Organization logo not found',
@@ -428,7 +442,10 @@ export class OnboardingController {
       }
 
       // Generate signed URL
-      const signedUrl = await this.wasabiUploadService.getOrganizationLogoSignedUrl(organization.logo);
+      const signedUrl =
+        await this.wasabiUploadService.getOrganizationLogoSignedUrl(
+          organization.logo,
+        );
 
       return res.status(200).json({
         message: 'Organization logo signed URL generated successfully',
@@ -437,7 +454,9 @@ export class OnboardingController {
         objectKey: organization.logo,
       });
     } catch (error) {
-      this.logger.error(`❌ Failed to generate organization logo signed URL: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to generate organization logo signed URL: ${error.message}`,
+      );
       return res.status(500).json({
         message: 'Failed to generate organization logo signed URL',
         error: error.message,
@@ -472,9 +491,15 @@ export class OnboardingController {
         ? organizationAdminId[0]
         : organizationAdminId;
 
-      this.logger.log(`📋 Received organizationAdminId from headers: ${adminIdString}`);
+      this.logger.log(
+        `📋 Received organizationAdminId from headers: ${adminIdString}`,
+      );
 
-      if (!adminIdString || adminIdString === 'null' || adminIdString === 'undefined') {
+      if (
+        !adminIdString ||
+        adminIdString === 'null' ||
+        adminIdString === 'undefined'
+      ) {
         this.logger.error(`❌ Invalid admin ID: ${adminIdString}`);
         return res.status(400).json({
           message: 'Valid Organization Admin ID is required in headers',
@@ -489,11 +514,14 @@ export class OnboardingController {
         });
       }
 
-      this.logger.log(`🖼️ Uploading organization logo for admin: ${adminIdString}`);
+      this.logger.log(
+        `🖼️ Uploading organization logo for admin: ${adminIdString}`,
+      );
 
       // Get organization ID from admin ID
-      const organizationId = await this.organizationAdminService.findOrganizationById(adminIdString);
-      
+      const organizationId =
+        await this.organizationAdminService.findOrganizationById(adminIdString);
+
       if (!organizationId) {
         return res.status(404).json({
           message: 'Organization not found for this admin',
@@ -504,10 +532,11 @@ export class OnboardingController {
       this.logger.log(`📋 Found organization ID: ${organizationId}`);
 
       // Upload to Wasabi with WebP optimization
-      const uploadResult = await this.wasabiUploadService.uploadOrganizationLogo(
-        file,
-        organizationId,
-      );
+      const uploadResult =
+        await this.wasabiUploadService.uploadOrganizationLogo(
+          file,
+          organizationId,
+        );
 
       // Update organization logo in database with WebP object key
       await this.onboardingService.updateOrganizationLogo(
@@ -523,7 +552,9 @@ export class OnboardingController {
         objectKey: uploadResult.objectKey,
       });
     } catch (error) {
-      this.logger.error(`❌ Failed to upload organization logo: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to upload organization logo: ${error.message}`,
+      );
       return res.status(500).json({
         message: 'Failed to upload organization logo',
         error: error.message,
@@ -623,37 +654,68 @@ export class OnboardingController {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
 
-      const images = await this.onboardingService.fetchScreenShot();
-      const userData =
-        await this.onboardingService.getAllUserActivityData(OrganizationId);
-      const getUsersInDb =
-        await this.onboardingService.findAllDevices(OrganizationId);
-      // console.log('images', images);
-      // console.log('userData', userData);
-      // console.log(userData);
-      let finalData = userData.map((user) => {
-        // console.log(user);
-        user['ImgData'] = null;
+      // Fetch all necessary data in parallel for better performance
+      const [images, userData, devices, users] = await Promise.all([
+        this.onboardingService.fetchScreenShot(),
+        this.onboardingService.getAllUserActivityData(OrganizationId),
+        this.onboardingService.findAllDevices(OrganizationId),
+        this.onboardingService.getAllusers(OrganizationId), // Get users for user_name mapping
+      ]);
 
-        images.forEach((image) => {
-          const imgUrlExtracted = image?.key.split('/')[1].split('|')[0];
-          // console.log("imgUrlExtracted",imgUrlExtracted);
-          if (user?.activity_uuid === imgUrlExtracted) {
-            user['ImgData'] = image;
-          }
-          // console.log(user['ImgData']);
-        });
-
-        getUsersInDb.forEach((u) => {
-          if (u.user_uid === user.user_uid) {
-            user['device_user_name'] = u.user_name;
-          }
-        });
-        return user;
+      // Create lookup maps for O(1) access instead of nested loops
+      const imageMap = new Map();
+      images.forEach((image) => {
+        const activityUuid = image?.key.split('/')[1].split('|')[0];
+        imageMap.set(activityUuid, image);
       });
-      // console.log('finalData', finalData);
+
+      const deviceMap = new Map();
+      devices.forEach((device) => {
+        deviceMap.set(device.device_uid, device);
+      });
+
+      const userMap = new Map();
+      users.forEach((user) => {
+        userMap.set(user.userUUID, user);
+      });
+
+      // Map and optimize data - send only necessary fields
+      const finalData = userData
+        .map((activity) => {
+          const device = deviceMap.get(activity.user_uid);
+          const user = activity.user_uid ? userMap.get(activity.user_uid) : null;
+          const image = imageMap.get(activity.activity_uuid);
+
+          // Only include activities that have screenshots
+          if (!image) return null;
+
+          return {
+            activity_uuid: activity.activity_uuid,
+            user_uid: activity.user_uid,
+            device_user_name: device?.user_name || 'Unknown Device',
+            user_name: user?.userName || null, // User's actual name from User table (if mapped)
+            app_name: activity.app_name || 'Unknown App',
+            title: activity.page_title || activity.url || 'No Title',
+            url: activity.url,
+            productivity_status: activity.productivity_status,
+            timestamp: activity.timestamp,
+            ImgData: {
+              url: image.url,
+              key: image.key,
+              lastModified: image.lastModified,
+              size: image.size,
+            },
+          };
+        })
+        .filter((item) => item !== null); // Remove activities without screenshots
+
+      this.logger.log(
+        `Returning ${finalData.length} screenshots for organization ${OrganizationId}`,
+      );
+      
       res.status(200).json(finalData);
     } catch (error) {
+      this.logger.error('Error fetching screenshots:', error);
       res.status(400).json({
         message: 'Failed to fetch images from wasabi.',
         error: error?.message,
@@ -1192,7 +1254,9 @@ export class OnboardingController {
         }
       }
 
-      console.log(`Final processed devices with recent activity: ${devices.length} devices (filtered to show only devices with user_id or tracking activity)`);
+      console.log(
+        `Final processed devices with recent activity: ${devices.length} devices (filtered to show only devices with user_id or tracking activity)`,
+      );
       return res.status(200).json({ devices, organization });
     } catch (error) {
       console.error('Failed to fetch devices:', error);
@@ -2147,7 +2211,7 @@ export class OnboardingController {
     @Req() req: Request,
   ): Promise<any> {
     const data = req.body;
-    console.log(userData,"userData")
+    console.log(userData, 'userData');
     const organizationAdminId = req.headers['organizationAdminId'] as string;
 
     const organizationAdminIdString = Array.isArray(organizationAdminId)
@@ -2209,7 +2273,7 @@ export class OnboardingController {
         userData?.email,
         organizationId,
       );
-      
+
       if (!isUserExist?.email) {
         // User doesn't exist in this organization, create new user
         userData['organizationId'] = organizationId;
@@ -2217,7 +2281,9 @@ export class OnboardingController {
         console.log('User registered here...');
       } else {
         // User already exists in this organization, return existing user with installer
-        console.log('User already exists in this organization, providing installer with existing config...');
+        console.log(
+          'User already exists in this organization, providing installer with existing config...',
+        );
       }
 
       const uniqueDeviceCreation =
@@ -2275,29 +2341,27 @@ export class OnboardingController {
         });
       }
 
-      const configFilePath = path.join(osInstallerPath, 'dev_config.txt');
-
       // Encryption setup
       const key = 'an example very very secret key.';
       const iv = Buffer.alloc(16, 0);
 
-      // Prepare configuration values with actual device ID and user settings
+      // Create organization object for handlers with clean name for zip file
+      const organization = { 
+        _id: organizationId, 
+        name: 'TrackTime', // Use generic name for invite downloads
+        toString: () => organizationId 
+      };
+
+      // Prepare configuration values (matching Rust app format - 7 fields only)
       const configValues = {
         HOST_FOR_NEST:
-          'https://deploy-tracktime-nestjs-0kz7.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-zo6h.onrender.com/produce',
+          'https://deploy-tracktime-nestjs-56r0.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-lq7y.onrender.com/produce',
         device_id: deviceId,
-        token: deviceId,
-        timeForUnpaidUser: userConfig?.timeForUnpaidUser || '5',
+        timeForUnpaidUser: userConfig?.timeForUnpaidUser || '2', // Default 2 seconds for paid users, can be updated by policy
         organizationId: organizationId,
         version: '1.0.0',
         blurStatus: userConfig?.blurStatus || 'false',
-        // Add user-specific configurations
-        userType: userConfig?.userType || 'existing', // existing, new, anonymous
-        userName: userConfig?.userName || '',
-        userEmail: userConfig?.email || '',
-        trackTimeStatus: userConfig?.trackTimeStatus || 'Resume',
-        isPaid: userConfig?.isPaid || 'false',
       };
 
       // Encrypt all configuration values
@@ -2305,7 +2369,6 @@ export class OnboardingController {
         HOST_FOR_NEST: this.encryptData(configValues.HOST_FOR_NEST, key, iv),
         HOST_FOR_GO: this.encryptData(configValues.HOST_FOR_GO, key, iv),
         device_id: this.encryptData(configValues.device_id, key, iv),
-        token: this.encryptData(configValues.token, key, iv),
         timeForUnpaidUser: this.encryptData(
           configValues.timeForUnpaidUser,
           key,
@@ -2314,101 +2377,49 @@ export class OnboardingController {
         organizationId: this.encryptData(configValues.organizationId, key, iv),
         version: this.encryptData(configValues.version, key, iv),
         blurStatus: this.encryptData(configValues.blurStatus, key, iv),
-        userType: this.encryptData(configValues.userType, key, iv),
-        userName: this.encryptData(configValues.userName, key, iv),
-        userEmail: this.encryptData(configValues.userEmail, key, iv),
-        trackTimeStatus: this.encryptData(configValues.trackTimeStatus, key, iv),
-        isPaid: this.encryptData(configValues.isPaid, key, iv),
       };
 
-      // Create the complete configuration content
-      const updatedConfig = `organizationId=${encryptedConfig.organizationId}
-timeForUnpaidUser=${encryptedConfig.timeForUnpaidUser}
-device_id=${encryptedConfig.device_id}
+      // Create the complete configuration content (NO SPACES - clean format matching Rust app)
+      const updatedConfig = `timeForUnpaidUser=${encryptedConfig.timeForUnpaidUser}
 version=${encryptedConfig.version}
-HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}
 blurStatus=${encryptedConfig.blurStatus}
-token=${encryptedConfig.token}
 HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}
-userType=${encryptedConfig.userType}
-userName=${encryptedConfig.userName}
-userEmail=${encryptedConfig.userEmail}
-trackTimeStatus=${encryptedConfig.trackTimeStatus}
-isPaid=${encryptedConfig.isPaid}`;
+organizationId=${encryptedConfig.organizationId}
+device_id=${encryptedConfig.device_id}
+HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
 
-      // Write updated config to file
-      fs.writeFileSync(configFilePath, updatedConfig);
+      this.logger.log(`Generating installer package for ${operatingSystem} - Org: ${organizationId}`);
 
-      // Create zip file
-      let zipFileName;
-      if (operatingSystem === 'macos') {
-        zipFileName = `${organizationId}_macOS_package.zip`;
-      } else if (operatingSystem === 'windows') {
-        zipFileName = `${organizationId}_Windows_${fileType}_package.zip`;
+      // Use appropriate handler based on OS
+      if (operatingSystem === 'windows') {
+        return await this.handleWindowsInstallerWithAdmZip(
+          res,
+          organization,
+          osInstallerPath,
+          installerBasePath,
+          updatedConfig,
+        );
+      } else if (operatingSystem === 'macos') {
+        return await this.handleMacOSInstaller(
+          res,
+          organization,
+          osInstallerPath,
+          installerBasePath,
+          updatedConfig,
+        );
+      } else if (operatingSystem === 'linux') {
+        return await this.handleLinuxInstaller(
+          res,
+          organization,
+          osInstallerPath,
+          installerBasePath,
+          updatedConfig,
+        );
       } else {
-        zipFileName = `${organizationId}_${operatingSystem}_package.zip`;
-      }
-
-      const outputZipPath = path.join(installerBasePath, zipFileName);
-
-      return new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(outputZipPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        output.on('close', () => {
-          console.log(`Archive created: ${archive.pointer()} total bytes`);
-
-          // Send zip file
-          res.set({
-            'Content-Disposition': `attachment; filename="${zipFileName}"`,
-            'Content-Type': 'application/zip',
-          });
-
-          res.sendFile(outputZipPath, {}, (err) => {
-            if (err) {
-              console.error('Error sending file:', err);
-              reject(err);
-            } else {
-              // Clean up
-              try {
-                fs.unlinkSync(outputZipPath);
-                console.log('Zip file cleaned up successfully');
-              } catch (unlinkError) {
-                console.error('Error deleting zip file:', unlinkError);
-              }
-              resolve(true);
-            }
-          });
+        return res.status(400).json({
+          error: `Unsupported operating system: ${operatingSystem}`,
         });
-
-        output.on('error', reject);
-        archive.on('error', reject);
-
-        archive.pipe(output);
-        // Add files to archive
-        const files = fs.readdirSync(osInstallerPath);
-        for (const file of files) {
-          const filePath = path.join(osInstallerPath, file);
-          const stats = fs.statSync(filePath);
-
-          if (stats.isFile()) {
-            if (operatingSystem === 'macos' && file === 'trackTime') {
-              const fileBuffer = fs.readFileSync(filePath);
-              archive.append(fileBuffer, {
-                name: file,
-                mode: 0o755,
-              });
-            } else {
-              const fileBuffer = fs.readFileSync(filePath);
-              archive.append(fileBuffer, { name: file });
-            }
-          } else if (stats.isDirectory()) {
-            archive.directory(filePath, file);
-          }
-        }
-
-        archive.finalize();
-      });
+      }
     } catch (error) {
       console.error('Error generating installer package:', error);
       return res.status(500).json({
@@ -2420,7 +2431,11 @@ isPaid=${encryptedConfig.isPaid}`;
 
   private encryptData(data: string, key: string, iv: Buffer): string {
     const keyBuffer = Buffer.from(key, 'utf-8');
-    const cipher = crypto.createCipheriv('aes-256-cbc', keyBuffer as any, iv as any);
+    const cipher = crypto.createCipheriv(
+      'aes-256-cbc',
+      keyBuffer as any,
+      iv as any,
+    );
     let encrypted = cipher.update(data.toString(), 'utf-8', 'hex');
     encrypted += cipher.final('hex');
     return encrypted;
@@ -2441,7 +2456,7 @@ isPaid=${encryptedConfig.isPaid}`;
     // Validate required fields
     if (!macAddress || !organizationId || !username) {
       this.logger.warn('Validation failed: Missing required fields');
-      throw new HttpException( 
+      throw new HttpException(
         'All fields are required',
         HttpStatus.BAD_REQUEST,
       );
@@ -2474,35 +2489,35 @@ isPaid=${encryptedConfig.isPaid}`;
           )
         : await this.onboardingService.checkDeviceIdExist(macAddress, username);
 
-      let deviceIdOrNew: string = deviceExist;
       this.logger.log(
         `Device existence check complete. Result: ${deviceExist}`,
       );
 
-      // Step 3: Create New Device if Not Exists
+      // Step 3: Return error if device not found (don't create new device)
       if (!deviceExist) {
-        this.logger.log(`Creating new device for user: ${username}`);
-        deviceIdOrNew = await this.onboardingService.createDeviceForUser(
-          organizationId,
-          username,
-          '', // email - will be converted to null in the service
-          '', // user_uid - will be converted to null in the service
-          macAddress,
+        this.logger.warn(
+          `Device not registered. mac_address: ${macAddress}, device_user_name: ${username}`,
+        );
+        throw new HttpException(
+          'Device not registered. Please contact your administrator to register this device.',
+          HttpStatus.NOT_FOUND,
         );
       }
+
+      const deviceIdOrNew: string = deviceExist;
 
       // Step 4: Retrieve User Config
       let userConfig = await this.onboardingService.getUserConfig(
         deviceIdOrNew,
         organizationId,
       );
-       console.log('userConfig', userConfig);
+      console.log('userConfig', userConfig);
 
       if (!userConfig) {
         // this.logger.warn('User configuration not found');
         userConfig = {
-          "isPaid": false,
-          "trackTimeStatus": "Resume"
+          isPaid: false,
+          trackTimeStatus: 'Resume',
         }; // temeprory fix
         // return res
         //   .status(404)
@@ -2532,7 +2547,7 @@ isPaid=${encryptedConfig.isPaid}`;
           isPaid: isPaidStatus,
         },
       };
- 
+
       this.logger.log(`FinalData ${JSON.stringify(finalData)}`);
       return res.status(200).json(finalData);
     } catch (error) {
@@ -2583,7 +2598,7 @@ isPaid=${encryptedConfig.isPaid}`;
       });
     }
   }
-  
+
   @Get('/users-for-download')
   async getUsersForDownload(@Req() req: Request, @Res() res: Response) {
     try {
@@ -2591,30 +2606,30 @@ isPaid=${encryptedConfig.isPaid}`;
       const organizationAdminIdString = Array.isArray(organizationAdminId)
         ? organizationAdminId[0]
         : organizationAdminId;
-      
-        // Retrieve organization details
+
+      // Retrieve organization details
       const organization =
         await this.organizationAdminService.findOrganizationById(
           organizationAdminIdString,
         );
-  
 
       if (!organization) {
         return res.status(400).json({ error: 'Organization ID is required' });
       }
 
-      const users = await this.onboardingService.getUsersForDownload(organization);
-      
+      const users =
+        await this.onboardingService.getUsersForDownload(organization);
+
       return res.json({
         success: true,
-        users: users
+        users: users,
       });
     } catch (error) {
       this.logger.error('Error fetching users for download:', error);
       return res.status(500).json({ error: 'Failed to fetch users' });
     }
   }
-  
+
   @Get('/downloadApplication')
   async downloadApplication(@Res() res, @Req() req: Request) {
     try {
@@ -2622,19 +2637,19 @@ isPaid=${encryptedConfig.isPaid}`;
       const organizationAdminIdString = Array.isArray(organizationAdminId)
         ? organizationAdminId[0]
         : organizationAdminId;
-  
+
       // Retrieve organization details
       const organization =
         await this.organizationAdminService.findOrganizationById(
           organizationAdminIdString,
         );
-  
+
       if (!organization) {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
-  
+
       const { os, userType, userName, userEmail, organizationId } = req.query;
-  
+
       // Validate OS parameter
       const supportedOS = ['windows', 'linux', 'macos'];
       if (!os || !supportedOS.includes(os as string)) {
@@ -2643,10 +2658,12 @@ isPaid=${encryptedConfig.isPaid}`;
             'Invalid or missing OS parameter. Supported values: windows, linux, macos',
         });
       }
-  
+
       const selectedOS = os as string;
-  
-      this.logger.log(`Processing download for OS: ${selectedOS}, UserType: ${userType}`);
+
+      this.logger.log(
+        `Processing download for OS: ${selectedOS}, UserType: ${userType}`,
+      );
 
       // Handle different user types
       let deviceId = 'null';
@@ -2657,35 +2674,52 @@ isPaid=${encryptedConfig.isPaid}`;
         // For existing user, find the user by email (extracted from display name)
         const userDisplayName = decodeURIComponent(userName as string);
         console.log('Processing existing user:', userDisplayName);
-        
+
         // Extract email from display name format: "(email) - Status"
         const emailMatch = userDisplayName.match(/\(([^)]+)\)/);
         if (emailMatch) {
           const userEmail = emailMatch[1];
           console.log('Extracted email:', userEmail);
-          
+
           try {
-            const user = await this.onboardingService.findUserByEmail(userEmail, organization);
+            const user = await this.onboardingService.findUserByEmail(
+              userEmail,
+              organization,
+            );
             if (user) {
               userId = user.userUUID;
               finalUserName = user.userName || user.email || 'existing_user';
-              
+
               // Find user's device
-              const userDevice = await this.onboardingService.findDeviceByUserId(userId, organization);
+              const userDevice =
+                await this.onboardingService.findDeviceByUserId(
+                  userId,
+                  organization,
+                );
               if (userDevice) {
                 deviceId = userDevice.device_uid;
               }
             } else {
-              this.logger.warn(`User not found for email: ${userEmail} in organization: ${organization}`);
-              return res.status(404).json({ error: `User not found for email: ${userEmail}` });
+              this.logger.warn(
+                `User not found for email: ${userEmail} in organization: ${organization}`,
+              );
+              return res
+                .status(404)
+                .json({ error: `User not found for email: ${userEmail}` });
             }
           } catch (error) {
             this.logger.error('Error finding existing user:', error);
-            return res.status(500).json({ error: 'Failed to find existing user' });
+            return res
+              .status(500)
+              .json({ error: 'Failed to find existing user' });
           }
         } else {
-          this.logger.warn(`Invalid user display name format: ${userDisplayName}`);
-          return res.status(400).json({ error: 'Invalid user display name format' });
+          this.logger.warn(
+            `Invalid user display name format: ${userDisplayName}`,
+          );
+          return res
+            .status(400)
+            .json({ error: 'Invalid user display name format' });
         }
       } else if (userType === 'new' && userName && userEmail) {
         // Create new user and device
@@ -2696,11 +2730,11 @@ isPaid=${encryptedConfig.isPaid}`;
             organizationId: organization,
             trackTimeStatus: TrackTimeStatus.Resume,
           });
-          
+
           if (newUser) {
             userId = newUser.userUUID;
             finalUserName = userName as string;
-            
+
             // Create device for new user
             const newDevice = await this.onboardingService.createDevice({
               device_name: `${userName}_device`,
@@ -2708,14 +2742,16 @@ isPaid=${encryptedConfig.isPaid}`;
               organization_uid: organization,
               user_name: userName as string,
             });
-            
+
             if (newDevice) {
               deviceId = newDevice.device_uid;
             }
           }
         } catch (error) {
           this.logger.error('Error creating new user/device:', error);
-          return res.status(500).json({ error: 'Failed to create new user and device' });
+          return res
+            .status(500)
+            .json({ error: 'Failed to create new user and device' });
         }
       } else if (userType === 'anonymous') {
         // Create anonymous device only
@@ -2726,19 +2762,23 @@ isPaid=${encryptedConfig.isPaid}`;
             organization_uid: organization,
             user_name: 'anonymous_user',
           });
-          
+
           if (anonymousDevice) {
             deviceId = anonymousDevice.device_uid;
             finalUserName = 'anonymous';
           }
         } catch (error) {
           this.logger.error('Error creating anonymous device:', error);
-          return res.status(500).json({ error: 'Failed to create anonymous device' });
+          return res
+            .status(500)
+            .json({ error: 'Failed to create anonymous device' });
         }
       }
 
-      this.logger.log(`Device ID: ${deviceId}, User ID: ${userId}, User Name: ${finalUserName}`);
-  
+      this.logger.log(
+        `Device ID: ${deviceId}, User ID: ${userId}, User Name: ${finalUserName}`,
+      );
+
       // Get the appropriate installer path
       const installerBasePath = path.join(
         process.cwd(),
@@ -2746,25 +2786,27 @@ isPaid=${encryptedConfig.isPaid}`;
         'organisation',
         'Installer',
       );
-  
+
       const osInstallerPath = path.join(installerBasePath, selectedOS);
-  
+
       // Check if OS folder exists
       if (!fs.existsSync(osInstallerPath)) {
         return res.status(404).json({
           error: `Installer not available for ${selectedOS}`,
         });
       }
-  
+
       // Encryption setup
       const key = 'an example very very secret key.';
       const iv = Buffer.alloc(16, 0);
-  
+
       // Prepare configuration values
-      const orgId = typeof organization === 'string' 
-        ? organization 
-        : ((organization as any)._id?.toString() || (organization as any).toString());
-      
+      const orgId =
+        typeof organization === 'string'
+          ? organization
+          : (organization as any)._id?.toString() ||
+            (organization as any).toString();
+
       // Get user-specific settings based on user type
       let blurStatus = 'false';
       let trackTimeStatus = 'Resume';
@@ -2773,7 +2815,10 @@ isPaid=${encryptedConfig.isPaid}`;
       if (userType === 'existing' && userName) {
         // For existing user, get their actual settings using the userId we already found
         if (userId && userId !== 'null') {
-          const user = await this.onboardingService.findUserByUuid(userId, organization);
+          const user = await this.onboardingService.findUserByUuid(
+            userId,
+            organization,
+          );
           if (user && user.config) {
             trackTimeStatus = user.config.trackTimeStatus || 'Resume';
           }
@@ -2792,79 +2837,348 @@ isPaid=${encryptedConfig.isPaid}`;
         trackTimeStatus = 'Resume';
         isPaid = 'false';
       }
-      
+
       const configValues = {
-        HOST_FOR_NEST: 'https://deploy-tracktime-nestjs-0kz7.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-zo6h.onrender.com/produce',
+        HOST_FOR_NEST:
+          'https://deploy-tracktime-nestjs-56r0.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-lq7y.onrender.com/produce',
         device_id: deviceId,
-        token: userId,
-        timeForUnpaidUser: '5',
+        timeForUnpaidUser: '2', // Default 2 seconds, can be updated by policy
         organizationId: orgId,
         version: '1.0.0',
         blurStatus: blurStatus,
         trackTimeStatus: trackTimeStatus,
         isPaid: isPaid,
-        user_name: finalUserName,
       };
-  
+
       // Encrypt all configuration values
       const encryptedConfig = {
         HOST_FOR_NEST: this.encryptData(configValues.HOST_FOR_NEST, key, iv),
         HOST_FOR_GO: this.encryptData(configValues.HOST_FOR_GO, key, iv),
         device_id: this.encryptData(configValues.device_id, key, iv),
-        token: this.encryptData(configValues.token, key, iv),
         timeForUnpaidUser: this.encryptData(
           configValues.timeForUnpaidUser,
-          key, iv,
+          key,
+          iv,
         ),
         organizationId: this.encryptData(configValues.organizationId, key, iv),
         version: this.encryptData(configValues.version, key, iv),
         blurStatus: this.encryptData(configValues.blurStatus, key, iv),
-        trackTimeStatus: this.encryptData(configValues.trackTimeStatus, key, iv),
+        trackTimeStatus: this.encryptData(
+          configValues.trackTimeStatus,
+          key,
+          iv,
+        ),
         isPaid: this.encryptData(configValues.isPaid, key, iv),
-        user_name: this.encryptData(configValues.user_name, key, iv),
       };
-  
-      // Create the complete configuration content
-      const updatedConfig = `organizationId=${encryptedConfig.organizationId}
-  timeForUnpaidUser=${encryptedConfig.timeForUnpaidUser}
-  device_id=${encryptedConfig.device_id}
-  version=${encryptedConfig.version}
-  HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}
-  blurStatus=${encryptedConfig.blurStatus}
-trackTimeStatus=${encryptedConfig.trackTimeStatus}
-isPaid=${encryptedConfig.isPaid}
-  token=${encryptedConfig.token}
+
+      // Create the complete configuration content (NO SPACES - clean format matching Rust app)
+      const updatedConfig = `timeForUnpaidUser=${encryptedConfig.timeForUnpaidUser}
+version=${encryptedConfig.version}
+blurStatus=${encryptedConfig.blurStatus}
 HOST_FOR_GO=${encryptedConfig.HOST_FOR_GO}
-user_name=${encryptedConfig.user_name}`;
-  
+organizationId=${encryptedConfig.organizationId}
+device_id=${encryptedConfig.device_id}
+HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
+
       this.logger.log(`Config prepared successfully for ${selectedOS}`);
-  
-      // --- PLATFORM-SPECIFIC PACKAGING LOGIC ---
+
+      // Use existing methods to create and send ZIP file
       if (selectedOS === 'windows') {
-        return await this.handleWindowsInstallerWithAdmZip(
-          res, 
-          organization, 
-          osInstallerPath, 
-          installerBasePath, 
-          updatedConfig
-        );
-      } else {
-        // Keep your existing macOS and Linux zip logic
-        return await this.handleZipPackage(
-          res, 
-          organization, 
-          selectedOS, 
-          osInstallerPath, 
+        await this.handleWindowsInstallerWithAdmZip(
+          res,
+          organization,
+          osInstallerPath,
           installerBasePath,
-          updatedConfig
+          updatedConfig,
+        );
+      } else if (selectedOS === 'macos') {
+        await this.handleMacOSInstaller(
+          res,
+          organization,
+          osInstallerPath,
+          installerBasePath,
+          updatedConfig,
+        );
+      } else if (selectedOS === 'linux') {
+        await this.handleLinuxInstaller(
+          res,
+          organization,
+          osInstallerPath,
+          installerBasePath,
+          updatedConfig,
         );
       }
-  
+
+      // COMMENTED OUT - GitHub Actions build system (no longer needed with direct zip distribution)
+      // const buildRequest = await this.buildStatusService.createBuildRequest(
+      //   userId || 'anonymous',
+      //   organizationAdminIdString,
+      //   selectedOS,
+      //   userType as string
+      // );
+
+      // await this.notificationService.createBuildNotification(
+      //   userId || 'anonymous',
+      //   buildRequest.buildId,
+      //   'pending',
+      //   {
+      //     os: selectedOS,
+      //     userType,
+      //     userName: finalUserName
+      //   }
+      // );
+
+      // await this.triggerGitHubBuild({
+      //   buildId: buildRequest.buildId,
+      //   os: selectedOS,
+      //   userId: userId || 'anonymous',
+      //   organizationId: organizationAdminIdString,
+      //   userType: userType as string,
+      //   userName: finalUserName,
+      //   deviceId
+      // });
     } catch (error) {
       this.logger.error('General error in downloadApplication:', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: 'Failed to download the application!',
+        error: error.message,
+      });
+    }
+  }
+
+  // COMMENTED OUT - GitHub Actions build status endpoint (no longer needed with direct zip distribution)
+  // @Get('/build-status/:buildId')
+  // async getBuildStatus(@Param('buildId') buildId: string, @Res() res: Response) {
+  //   try {
+  //     const build = await this.buildStatusService.getBuildStatus(buildId);
+  //     if (!build) {
+  //       return res.status(404).json({ error: 'Build not found' });
+  //     }
+  //
+  //     return res.json({
+  //       buildId: build.buildId,
+  //       status: build.status,
+  //       progress: build.progressPercentage,
+  //       currentStep: build.currentStep,
+  //       downloadUrl: build.downloadUrl,
+  //       errorMessage: build.errorMessage,
+  //       progressSteps: build.progressSteps,
+  //       createdAt: build.createdAt,
+  //       updatedAt: build.updatedAt
+  //     });
+  //   } catch (error) {
+  //     this.logger.error('Error getting build status:', error);
+  //     return res.status(500).json({ error: 'Failed to get build status' });
+  //   }
+  // }
+
+  // COMMENTED OUT - GitHub Actions trigger method (no longer needed with direct zip distribution)
+  // private async triggerGitHubBuild(params: {
+  //   buildId: string;
+  //   os: string;
+  //   userId: string;
+  //   organizationId: string;
+  //   userType: string;
+  //   userName: string;
+  //   deviceId: string;
+  // }): Promise<void> {
+  //   try {
+  //     const githubToken = process.env.GITHUB_TOKEN;
+  //     const repo = process.env.GITHUB_REPO; // Format: owner/repo-name
+  //
+  //     if (!githubToken || !repo) {
+  //       this.logger.error('GitHub token or repo not configured');
+  //       throw new Error('GitHub configuration missing');
+  //     }
+
+  //     const response = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/build-installer.yml/dispatches`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Authorization': `Bearer ${githubToken}`,
+  //         'Accept': 'application/vnd.github.v3+json',
+  //         'Content-Type': 'application/json'
+  //       },
+  //       body: JSON.stringify({
+  //         ref: 'main',
+  //         inputs: params
+  //       })
+  //     });
+
+  //     if (!response.ok) {
+  //       const errorText = await response.text();
+  //       this.logger.error(`Failed to trigger GitHub Actions: ${response.status} ${errorText}`);
+  //       throw new Error(`GitHub Actions trigger failed: ${response.status}`);
+  //     }
+
+  //     this.logger.log(`GitHub Actions workflow triggered for build ${params.buildId}`);
+  //   } catch (error) {
+  //     this.logger.error('Error triggering GitHub Actions:', error);
+  //     throw error;
+  //   }
+  // }
+
+  private async handleMacOSInstaller(
+    res: Response,
+    organization: any,
+    osInstallerPath: string,
+    installerBasePath: string,
+    updatedConfig: string,
+  ) {
+    try {
+      const orgName =
+        organization.name ||
+        organization._id?.toString() ||
+        organization.toString();
+      this.logger.log(
+        `Creating macOS installer package for organization: ${orgName}`,
+      );
+
+      // Check for installer files
+      const dmgPath = path.join(osInstallerPath, 'Installer', 'TrackTime-1.0.0.dmg');
+      const trackTimePath = path.join(osInstallerPath, 'trackTime');
+      
+      let installerPath: string;
+      let installerFileName: string;
+
+      if (fs.existsSync(dmgPath)) {
+        installerPath = dmgPath;
+        installerFileName = 'TrackTime-1.0.0.dmg';
+      } else if (fs.existsSync(trackTimePath)) {
+        installerPath = trackTimePath;
+        installerFileName = 'trackTime';
+      } else {
+        this.logger.error(`macOS installer not found`);
+        return res.status(404).json({
+          error: 'macOS installer not found on server.',
+        });
+      }
+
+      const customizedInstallerName = `TrackTime_macOS_Installer.zip`;
+      const customizedInstallerPath = path.join(
+        installerBasePath,
+        customizedInstallerName,
+      );
+
+      // Create ZIP package
+      const zip = new AdmZip();
+      zip.addLocalFile(installerPath, '', installerFileName);
+      zip.addFile('dev_config.txt', Buffer.from(updatedConfig, 'utf8'));
+
+      const readmeContent = `TrackTime Installer - macOS
+
+Installation:
+1. Extract this ZIP file
+2. Double-click '${installerFileName}' to install
+3. Grant permissions if prompted
+4. Done!
+
+Note: The dev_config.txt contains your organization configuration and will be used automatically.`;
+
+      zip.addFile('README.txt', Buffer.from(readmeContent, 'utf8'));
+      zip.writeZip(customizedInstallerPath);
+      this.logger.log(`macOS installer package created: ${customizedInstallerName}`);
+
+      // Send file
+      res.set({
+        'Content-Disposition': `attachment; filename="${customizedInstallerName}"`,
+        'Content-Type': 'application/zip',
+        'Content-Length': fs.statSync(customizedInstallerPath).size.toString(),
+      });
+
+      res.status(HttpStatus.OK).sendFile(customizedInstallerPath, {}, async (err) => {
+        try {
+          if (fs.existsSync(customizedInstallerPath)) {
+            fs.unlinkSync(customizedInstallerPath);
+            this.logger.log('Temporary installer cleaned up successfully.');
+          }
+        } catch (cleanupError) {
+          this.logger.error('Cleanup error:', cleanupError);
+        }
+      });
+    } catch (error) {
+      this.logger.error('Error creating macOS installer:', error);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Failed to create macOS installer',
+        error: error.message,
+      });
+    }
+  }
+
+  private async handleLinuxInstaller(
+    res: Response,
+    organization: any,
+    osInstallerPath: string,
+    installerBasePath: string,
+    updatedConfig: string,
+  ) {
+    try {
+      const orgName =
+        organization.name ||
+        organization._id?.toString() ||
+        organization.toString();
+      this.logger.log(
+        `Creating Linux installer package for organization: ${orgName}`,
+      );
+
+      const installerPath = path.join(
+        osInstallerPath,
+        'productivity-desktop_0.1.0-1_amd64.deb',
+      );
+
+      if (!fs.existsSync(installerPath)) {
+        this.logger.error(`Linux installer not found at: ${installerPath}`);
+        return res.status(404).json({
+          error: 'Linux installer not found on server.',
+        });
+      }
+
+      const customizedInstallerName = `TrackTime_Linux_Installer.zip`;
+      const customizedInstallerPath = path.join(
+        installerBasePath,
+        customizedInstallerName,
+      );
+
+      // Create ZIP package
+      const zip = new AdmZip();
+      zip.addLocalFile(installerPath, '', 'productivity-desktop_0.1.0-1_amd64.deb');
+      zip.addFile('dev_config.txt', Buffer.from(updatedConfig, 'utf8'));
+
+      const readmeContent = `TrackTime Installer - Linux
+
+Installation:
+1. Extract this ZIP file
+2. Run: sudo dpkg -i productivity-desktop_0.1.0-1_amd64.deb
+3. If needed: sudo apt-get install -f
+4. Done!
+
+Note: The dev_config.txt contains your organization configuration and will be used automatically.`;
+
+      zip.addFile('README.txt', Buffer.from(readmeContent, 'utf8'));
+      zip.writeZip(customizedInstallerPath);
+      this.logger.log(`Linux installer package created: ${customizedInstallerName}`);
+
+      // Send file
+      res.set({
+        'Content-Disposition': `attachment; filename="${customizedInstallerName}"`,
+        'Content-Type': 'application/zip',
+        'Content-Length': fs.statSync(customizedInstallerPath).size.toString(),
+      });
+
+      res.status(HttpStatus.OK).sendFile(customizedInstallerPath, {}, async (err) => {
+        try {
+          if (fs.existsSync(customizedInstallerPath)) {
+            fs.unlinkSync(customizedInstallerPath);
+            this.logger.log('Temporary installer cleaned up successfully.');
+          }
+        } catch (cleanupError) {
+          this.logger.error('Cleanup error:', cleanupError);
+        }
+      });
+    } catch (error) {
+      this.logger.error('Error creating Linux installer:', error);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Failed to create Linux installer',
         error: error.message,
       });
     }
@@ -2875,22 +3189,33 @@ user_name=${encryptedConfig.user_name}`;
     organization: any,
     osInstallerPath: string,
     installerBasePath: string,
-    updatedConfig: string
+    updatedConfig: string,
   ) {
     try {
-      const orgName = organization.name || organization._id?.toString() || organization.toString();
-      this.logger.log(`Creating custom Windows installer for organization: ${orgName}`);
-  
+      const orgName =
+        organization.name ||
+        organization._id?.toString() ||
+        organization.toString();
+      this.logger.log(
+        `Creating custom Windows installer for organization: ${orgName}`,
+      );
+
       // 1. Define paths
-      const installerExePath = path.join(osInstallerPath, 'tracktimeInstaller.exe');
-      const customizedInstallerName = `${orgName}_tracktime_setup.zip`;
-      const customizedInstallerPath = path.join(installerBasePath, customizedInstallerName);
+      const installerExePath = path.join(
+        osInstallerPath,
+        'tracktimeInstaller.exe',
+      );
+      const customizedInstallerName = `TrackTime_Windows_Installer.zip`;
+      const customizedInstallerPath = path.join(
+        installerBasePath,
+        customizedInstallerName,
+      );
 
       // 2. Check if installer exists
       if (!fs.existsSync(installerExePath)) {
         this.logger.error(`Installer not found at: ${installerExePath}`);
-        return res.status(404).json({ 
-          error: 'Windows installer not found on server.' 
+        return res.status(404).json({
+          error: 'Windows installer not found on server.',
         });
       }
 
@@ -2903,50 +3228,46 @@ user_name=${encryptedConfig.user_name}`;
       // 5. Add the customized config file
       zip.addFile('dev_config.txt', Buffer.from(updatedConfig, 'utf8'));
 
-      // 6. Add a README file with installation instructions
-      const readmeContent = `TrackTime Desktop Application Setup
+      // 6. Add a concise README file
+      const readmeContent = `TrackTime Installer - Windows
 
-Installation Instructions:
-1. Extract this ZIP file to a folder on your computer
-2. Run 'tracktimeInstaller.exe' as Administrator
+Installation:
+1. Extract this ZIP file
+2. Right-click 'tracktimeInstaller.exe' and select "Run as administrator"
 3. Follow the installation wizard
-4. The application will be configured automatically with your organization settings
+4. Done!
 
-Configuration:
-- Organization: ${orgName}
-- Device ID: Configured automatically
-- User: Configured automatically
-
-For support, contact your system administrator.
-
-Generated on: ${new Date().toISOString()}`;
+Note: The dev_config.txt contains your organization configuration and will be used automatically.`;
 
       zip.addFile('README.txt', Buffer.from(readmeContent, 'utf8'));
 
       // 7. Save the ZIP package
       zip.writeZip(customizedInstallerPath);
-      this.logger.log(`Customized installer package created: ${customizedInstallerName}`);
-  
+      this.logger.log(
+        `Customized installer package created: ${customizedInstallerName}`,
+      );
+
       // 8. Send the ZIP file to the user
       res.set({
         'Content-Disposition': `attachment; filename="${customizedInstallerName}"`,
         'Content-Type': 'application/zip',
         'Content-Length': fs.statSync(customizedInstallerPath).size.toString(),
       });
-  
+
       // 9. Send file and clean up temporary file
-      res.status(HttpStatus.OK).sendFile(customizedInstallerPath, {}, async (err) => {
-        // Cleanup: Delete the temporary customized installer
-        try {
-          if (fs.existsSync(customizedInstallerPath)) {
-            fs.unlinkSync(customizedInstallerPath);
-            this.logger.log('Temporary installer cleaned up successfully.');
+      res
+        .status(HttpStatus.OK)
+        .sendFile(customizedInstallerPath, {}, async (err) => {
+          // Cleanup: Delete the temporary customized installer
+          try {
+            if (fs.existsSync(customizedInstallerPath)) {
+              fs.unlinkSync(customizedInstallerPath);
+              this.logger.log('Temporary installer cleaned up successfully.');
+            }
+          } catch (cleanupError) {
+            this.logger.error('Cleanup error:', cleanupError);
           }
-        } catch (cleanupError) {
-          this.logger.error('Cleanup error:', cleanupError);
-        }
-      });
-  
+        });
     } catch (error) {
       this.logger.error('Error creating custom Windows installer:', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
@@ -2965,23 +3286,28 @@ Generated on: ${new Date().toISOString()}`;
     updatedConfig: string,
   ): Promise<any> {
     try {
-      const orgName = organization.name || organization._id?.toString() || organization.toString();
-      this.logger.log(`Creating ${selectedOS} installer package for organization: ${orgName}`);
-  
+      const orgName =
+        organization.name ||
+        organization._id?.toString() ||
+        organization.toString();
+      this.logger.log(
+        `Creating ${selectedOS} installer package for organization: ${orgName}`,
+      );
+
       // Update the config file in the OS-specific directory
       const configFilePath = path.join(osInstallerPath, 'dev_config.txt');
-      
+
       if (!fs.existsSync(configFilePath)) {
         this.logger.error(`Config file not found at: ${configFilePath}`);
         return res.status(404).json({
           error: `Configuration file not found for ${selectedOS}`,
         });
       }
-  
+
       // Write updated config to file
       fs.writeFileSync(configFilePath, updatedConfig);
       this.logger.log(`Config file updated at: ${configFilePath}`);
-  
+
       // Create zip file
       let zipFileName;
       if (selectedOS === 'macos') {
@@ -2991,22 +3317,22 @@ Generated on: ${new Date().toISOString()}`;
       } else {
         zipFileName = `${orgName}_${selectedOS}_package.zip`;
       }
-  
+
       const outputZipPath = path.join(installerBasePath, zipFileName);
-  
+
       return new Promise((resolve, reject) => {
         const output = fs.createWriteStream(outputZipPath);
         const archive = archiver('zip', { zlib: { level: 9 } });
-  
+
         output.on('close', () => {
           this.logger.log(`Archive created: ${archive.pointer()} total bytes`);
-  
+
           // Send zip file
           res.set({
             'Content-Disposition': `attachment; filename="${zipFileName}"`,
             'Content-Type': 'application/zip',
           });
-  
+
           res.sendFile(outputZipPath, {}, (err) => {
             if (err) {
               this.logger.error('Error sending file:', err);
@@ -3023,28 +3349,31 @@ Generated on: ${new Date().toISOString()}`;
             }
           });
         });
-  
+
         output.on('error', (err) => {
           this.logger.error('Output stream error:', err);
           reject(err);
         });
-        
+
         archive.on('error', (err) => {
           this.logger.error('Archive error:', err);
           reject(err);
         });
-  
+
         archive.pipe(output);
-        
+
         // Add files to archive
         const files = fs.readdirSync(osInstallerPath);
         for (const file of files) {
           const filePath = path.join(osInstallerPath, file);
           const stats = fs.statSync(filePath);
-  
+
           if (stats.isFile()) {
             // For macOS executable, preserve permissions
-            if (selectedOS === 'macos' && (file === 'trackTime' || file.endsWith('.app'))) {
+            if (
+              selectedOS === 'macos' &&
+              (file === 'trackTime' || file.endsWith('.app'))
+            ) {
               const fileBuffer = fs.readFileSync(filePath);
               archive.append(fileBuffer, {
                 name: file,
@@ -3058,11 +3387,14 @@ Generated on: ${new Date().toISOString()}`;
             archive.directory(filePath, file);
           }
         }
-  
+
         archive.finalize();
       });
     } catch (error) {
-      this.logger.error(`Error generating ${selectedOS} installer package:`, error);
+      this.logger.error(
+        `Error generating ${selectedOS} installer package:`,
+        error,
+      );
       return res.status(500).json({
         message: `Failed to generate ${selectedOS} installer package`,
         error: error.message,
