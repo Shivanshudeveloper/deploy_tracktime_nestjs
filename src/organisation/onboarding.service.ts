@@ -13,11 +13,8 @@ import { TrackTimeStatus, User } from 'src/users/user.entity';
 import { CreateTeamDTO } from './dto/teams.dto';
 import { UserActivity } from 'src/users/user_activity.entity';
 import { DeepPartial } from 'typeorm';
-import { prototype } from 'events';
 import { ConfigService } from '@nestjs/config';
-import { AccessAnalyzer, S3 } from 'aws-sdk';
 import { Devices } from './devices.entity';
-import { validate } from 'class-validator';
 import { Subscription } from './subscription.entity';
 import axios from 'axios';
 import { CalculatedLogic } from './calculatedLogic.entity';
@@ -31,17 +28,12 @@ import { PolicyUsers } from './policy_user.entity';
 import { ScreenshotSettings } from './screenshot_settings.entity';
 import { TrackingHolidays } from './tracking_holidays.entity';
 import { TrackingWeekdays } from './tracking_weekdays.entity';
-import { ConfigurationServicePlaceholders } from 'aws-sdk/lib/config_service_placeholders';
-import { organizationAdminService } from './OrganizationAdmin.service';
 import { CreateOrganizationAdmin } from './OrganizationAdmin.entity';
 import { ProductivitySettingEntity } from './prodsetting.entity';
-import { Resend } from 'resend';
 import * as ExcelJS from 'exceljs';
 import * as PDFDocument from 'pdfkit';
-import { createObjectCsvWriter } from 'csv-writer';
-import * as fs from 'fs';
-import * as path from 'path';
-
+import {Resend} from "resend";
+import { S3 } from 'aws-sdk';
 export const holidayList = [
   // Indian Holidays
   { dayName: 'Republic Day', date: new Date('2024-01-26') },
@@ -136,7 +128,8 @@ const weekdayData = [
 
 // You can then save this `weekdayData` into the database using your existing repository methods.
 
-export let DeployFlaskBaseApi = 'https://python-url-classification-bs67.onrender.com'; 
+export let DeployFlaskBaseApi =
+  'https://python-url-classification-with-openai-brw3.onrender.com';
 export let LocalFlaskBaseApi = 'http://127.0.0.1:5000';
 // DeployFlaskBaseApi=LocalFlaskBaseApi;
 type UpdateConfigType = DeepPartial<User['config']>;
@@ -505,7 +498,8 @@ ${sanitizedOrgName} Team
     });
 
     // Generate buffer
-    return (await workbook.xlsx.writeBuffer()) as Buffer;
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
   }
 
   private async generatePDF(data: any[], date: string): Promise<Buffer> {
@@ -691,598 +685,705 @@ ${sanitizedOrgName} Team
       );
     }
   }
-// Add these methods to your OnboardingService class
+  // Add these methods to your OnboardingService class
 
-async getActivityTimelineExportData(
-  organizationId: string,
-  date: string,
-  users: string[] | 'all',
-  userData?: any[],
-): Promise<any[]> {
-  try {
-    // Get productivity data from Flask API for the specific date
-    const productivityData = await this.getProductivityData(organizationId, date);
+  async getActivityTimelineExportData(
+    organizationId: string,
+    date: string,
+    users: string[] | 'all',
+    userData?: any[],
+  ): Promise<any[]> {
+    try {
+      // Get productivity data from Flask API for the specific date
+      const productivityData = await this.getProductivityData(
+        organizationId,
+        date,
+      );
 
-    if (!productivityData || productivityData.length === 0) {
-      return [];
+      if (!productivityData || productivityData.length === 0) {
+        return [];
+      }
+
+      // Filter data based on selected users
+      let filteredData = productivityData;
+
+      if (users !== 'all' && Array.isArray(users) && users.length > 0) {
+        // If users array contains indices, filter by those indices
+        if (userData && userData.length > 0) {
+          filteredData = users
+            .map((userIndex) => {
+              const index = parseInt(userIndex.toString());
+              return productivityData[index];
+            })
+            .filter(Boolean);
+        } else {
+          // Filter by user names or IDs
+          filteredData = productivityData.filter(
+            (record, index) =>
+              users.includes(index.toString()) ||
+              users.includes(record.name) ||
+              users.includes(record.user_id),
+          );
+        }
+      }
+
+      // Transform data for export format
+      const exportData = filteredData.map((record) => {
+        const baseData = {
+          name: record.name || 'Unknown',
+          workingHour: record.workingHour || '0:00',
+          date: this.formatDate(date),
+          user_id: record.user_id || null,
+        };
+
+        // Process productivity timeline (9 AM to 6 PM = 9 hours)
+        if (record.productivityRecord && record.productivityRecord.length > 0) {
+          const timeline = [];
+
+          // Process first 9 hours (9 AM to 6 PM)
+          record.productivityRecord.slice(0, 9).forEach((hour, hourIndex) => {
+            const hourTime = 9 + hourIndex; // 9 AM, 10 AM, etc.
+
+            // Each hour has 6 ten-minute segments
+            for (let segmentIndex = 0; segmentIndex < 6; segmentIndex++) {
+              const segment = hour[segmentIndex] || {};
+              const startMinute = segmentIndex * 10;
+              const endMinute = startMinute + 10;
+
+              const timeSlot = `${hourTime.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hourTime.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+
+              // Determine productivity status with proper fallback
+              let productivity = 'away';
+              if (
+                segment &&
+                segment.productivity &&
+                parseFloat(segment.percent || '0') > 0
+              ) {
+                productivity = segment.productivity.toLowerCase();
+              }
+
+              timeline.push({
+                timeSlot,
+                productivity: productivity,
+                percent: segment.percent || '0',
+              });
+            }
+          });
+
+          baseData['timeline'] = timeline;
+        } else {
+          // If no timeline data, fill with 'away' status
+          const timeline = [];
+          for (let hour = 9; hour <= 17; hour++) {
+            for (let segment = 0; segment < 6; segment++) {
+              const startMinute = segment * 10;
+              const endMinute = startMinute + 10;
+              const timeSlot = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
+              timeline.push({
+                timeSlot,
+                productivity: 'away',
+                percent: '0',
+              });
+            }
+          }
+          baseData['timeline'] = timeline;
+        }
+
+        return baseData;
+      });
+
+      return exportData;
+    } catch (error) {
+      console.error('Error getting activity timeline export data:', error);
+      throw new Error(
+        `Failed to get activity timeline export data: ${error.message}`,
+      );
     }
+  }
 
-    // Filter data based on selected users
-    let filteredData = productivityData;
+  async generateActivityTimelineExport(
+    data: any[],
+    format: 'csv' | 'excel' | 'pdf' | 'txt',
+    date: string,
+  ): Promise<Buffer | string> {
+    console.log(
+      `Generating activity timeline export in ${format} format for ${data.length} records`,
+    );
 
-    if (users !== 'all' && Array.isArray(users) && users.length > 0) {
-      // If users array contains indices, filter by those indices
-      if (userData && userData.length > 0) {
-        filteredData = users.map(userIndex => {
-          const index = parseInt(userIndex.toString());
-          return productivityData[index];
-        }).filter(Boolean);
-      } else {
-        // Filter by user names or IDs
-        filteredData = productivityData.filter((record, index) => 
-          users.includes(index.toString()) || 
-          users.includes(record.name) ||
-          users.includes(record.user_id)
+    try {
+      switch (format) {
+        case 'csv':
+          return this.generateActivityTimelineCSV(data, date);
+        case 'excel':
+          return this.generateActivityTimelineExcel(data, date);
+        case 'pdf':
+          return this.generateActivityTimelinePDF(data, date);
+        case 'txt':
+          return this.generateActivityTimelineText(data, date);
+        default:
+          throw new Error(`Unsupported export format: ${format}`);
+      }
+    } catch (error) {
+      console.error(
+        `Error generating ${format} activity timeline export:`,
+        error,
+      );
+      throw new Error(
+        `Failed to generate ${format} activity timeline export: ${error.message}`,
+      );
+    }
+  }
+
+  private async generateActivityTimelineCSV(
+    data: any[],
+    date: string,
+  ): Promise<string> {
+    const formattedDate = this.formatDate(date);
+
+    // Create header with time slots
+    const timeSlots = [];
+    for (let hour = 9; hour <= 17; hour++) {
+      for (let segment = 0; segment < 6; segment++) {
+        const startMinute = segment * 10;
+        const endMinute = startMinute + 10;
+        timeSlots.push(
+          `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`,
         );
       }
     }
 
-    // Transform data for export format
-    const exportData = filteredData.map((record) => {
-      const baseData = {
-        name: record.name || 'Unknown',
-        workingHour: record.workingHour || '0:00',
-        date: this.formatDate(date),
-        user_id: record.user_id || null,
-      };
+    const headers = ['Employee Name', 'Work Hours', 'Date', ...timeSlots];
+    let csvContent = headers.join(',') + '\n';
 
-      // Process productivity timeline (9 AM to 6 PM = 9 hours)
-      if (record.productivityRecord && record.productivityRecord.length > 0) {
-        const timeline = [];
-        
-        // Process first 9 hours (9 AM to 6 PM)
-        record.productivityRecord.slice(0, 9).forEach((hour, hourIndex) => {
-          const hourTime = 9 + hourIndex; // 9 AM, 10 AM, etc.
-          
-          // Each hour has 6 ten-minute segments
-          for (let segmentIndex = 0; segmentIndex < 6; segmentIndex++) {
-            const segment = hour[segmentIndex] || {};
-            const startMinute = segmentIndex * 10;
-            const endMinute = startMinute + 10;
-            
-            const timeSlot = `${hourTime.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hourTime.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
-            
-            // Determine productivity status with proper fallback
-            let productivity = 'away';
-            if (segment && segment.productivity && parseFloat(segment.percent || '0') > 0) {
-              productivity = segment.productivity.toLowerCase();
-            }
-            
-            timeline.push({
-              timeSlot,
-              productivity: productivity,
-              percent: segment.percent || '0',
-            });
-          }
+    data.forEach((item) => {
+      const row = [
+        `"${item.name || 'N/A'}"`,
+        `"${item.workingHour || '0:00'}"`,
+        `"${formattedDate}"`,
+      ];
+
+      // Add productivity data for each time slot
+      if (item.timeline && item.timeline.length > 0) {
+        item.timeline.forEach((segment) => {
+          row.push(
+            `"${this.getProductivityDisplayText(segment.productivity)}"`,
+          );
         });
-        
-        baseData['timeline'] = timeline;
       } else {
-        // If no timeline data, fill with 'away' status
-        const timeline = [];
-        for (let hour = 9; hour <= 17; hour++) {
-          for (let segment = 0; segment < 6; segment++) {
-            const startMinute = segment * 10;
-            const endMinute = startMinute + 10;
-            const timeSlot = `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
-            timeline.push({
-              timeSlot,
-              productivity: 'away',
-              percent: '0',
-            });
-          }
-        }
-        baseData['timeline'] = timeline;
+        // Fill with 'Away' if no data
+        timeSlots.forEach(() => row.push('"Away"'));
       }
 
-      return baseData;
+      csvContent += row.join(',') + '\n';
     });
 
-    return exportData;
-  } catch (error) {
-    console.error('Error getting activity timeline export data:', error);
-    throw new Error(`Failed to get activity timeline export data: ${error.message}`);
-  }
-}
+    // Add summary
+    csvContent += '\n';
+    csvContent += '"SUMMARY:"\n';
+    csvContent += `"Total Employees","${data.length}"\n`;
+    csvContent += `"Report Date","${formattedDate}"\n`;
+    csvContent +=
+      '"NOTE: Timeline shows productivity status in 10-minute intervals from 9:00 AM to 6:00 PM"\n';
 
-async generateActivityTimelineExport(
-  data: any[],
-  format: 'csv' | 'excel' | 'pdf' | 'txt',
-  date: string,
-): Promise<Buffer | string> {
-  console.log(
-    `Generating activity timeline export in ${format} format for ${data.length} records`,
-  );
-
-  try {
-    switch (format) {
-      case 'csv':
-        return this.generateActivityTimelineCSV(data, date);
-      case 'excel':
-        return this.generateActivityTimelineExcel(data, date);
-      case 'pdf':
-        return this.generateActivityTimelinePDF(data, date);
-      case 'txt':
-        return this.generateActivityTimelineText(data, date);
-      default:
-        throw new Error(`Unsupported export format: ${format}`);
-    }
-  } catch (error) {
-    console.error(`Error generating ${format} activity timeline export:`, error);
-    throw new Error(
-      `Failed to generate ${format} activity timeline export: ${error.message}`,
-    );
-  }
-}
-
-private async generateActivityTimelineCSV(data: any[], date: string): Promise<string> {
-  const formattedDate = this.formatDate(date);
-  
-  // Create header with time slots
-  const timeSlots = [];
-  for (let hour = 9; hour <= 17; hour++) {
-    for (let segment = 0; segment < 6; segment++) {
-      const startMinute = segment * 10;
-      const endMinute = startMinute + 10;
-      timeSlots.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`);
-    }
+    return csvContent;
   }
 
-  const headers = ['Employee Name', 'Work Hours', 'Date', ...timeSlots];
-  let csvContent = headers.join(',') + '\n';
+  private async generateActivityTimelineExcel(
+    data: any[],
+    date: string,
+  ): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Activity Timeline');
 
-  data.forEach((item) => {
-    const row = [
-      `"${item.name || 'N/A'}"`,
-      `"${item.workingHour || '0:00'}"`,
-      `"${formattedDate}"`,
-    ];
+    const formattedDate = this.formatDate(date);
 
-    // Add productivity data for each time slot
-    if (item.timeline && item.timeline.length > 0) {
-      item.timeline.forEach(segment => {
-        row.push(`"${this.getProductivityDisplayText(segment.productivity)}"`);
-      });
-    } else {
-      // Fill with 'Away' if no data
-      timeSlots.forEach(() => row.push('"Away"'));
+    // Add title
+    worksheet.mergeCells('A1:BC1'); // Extended to cover all columns (54 time slots + 3 info columns)
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = `Activity Timeline Report - ${formattedDate}`;
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: 'center' };
+
+    // Create time slot headers
+    const timeSlots = [];
+    for (let hour = 9; hour <= 17; hour++) {
+      for (let segment = 0; segment < 6; segment++) {
+        const startMinute = segment * 10;
+        const endMinute = startMinute + 10;
+        timeSlots.push(
+          `${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`,
+        );
+      }
     }
 
-    csvContent += row.join(',') + '\n';
-  });
+    // Add headers
+    const headers = ['Employee Name', 'Work Hours', 'Date', ...timeSlots];
+    const headerRow = worksheet.addRow(headers);
 
-  // Add summary
-  csvContent += '\n';
-  csvContent += '"SUMMARY:"\n';
-  csvContent += `"Total Employees","${data.length}"\n`;
-  csvContent += `"Report Date","${formattedDate}"\n`;
-  csvContent += '"NOTE: Timeline shows productivity status in 10-minute intervals from 9:00 AM to 6:00 PM"\n';
-
-  return csvContent;
-}
-
-private async generateActivityTimelineExcel(data: any[], date: string): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Activity Timeline');
-
-  const formattedDate = this.formatDate(date);
-
-  // Add title
-  worksheet.mergeCells('A1:BC1'); // Extended to cover all columns (54 time slots + 3 info columns)
-  const titleCell = worksheet.getCell('A1');
-  titleCell.value = `Activity Timeline Report - ${formattedDate}`;
-  titleCell.font = { bold: true, size: 16 };
-  titleCell.alignment = { horizontal: 'center' };
-
-  // Create time slot headers
-  const timeSlots = [];
-  for (let hour = 9; hour <= 17; hour++) {
-    for (let segment = 0; segment < 6; segment++) {
-      const startMinute = segment * 10;
-      const endMinute = startMinute + 10;
-      timeSlots.push(`${hour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')}-${hour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`);
-    }
-  }
-
-  // Add headers
-  const headers = ['Employee Name', 'Work Hours', 'Date', ...timeSlots];
-  const headerRow = worksheet.addRow(headers);
-
-  headerRow.eachCell((cell, colNumber) => {
-    cell.font = { bold: true, size: 8 };
-    cell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' },
-    };
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
-    cell.alignment = { horizontal: 'center', wrapText: true };
-  });
-
-  // Add data rows
-  data.forEach((item) => {
-    const rowData = [
-      item.name || 'N/A',
-      item.workingHour || '0:00',
-      formattedDate,
-    ];
-
-    // Add productivity data for each time slot
-    if (item.timeline && item.timeline.length > 0) {
-      item.timeline.forEach(segment => {
-        rowData.push(this.getProductivityDisplayText(segment.productivity));
-      });
-    } else {
-      // Fill with 'Away' if no data
-      timeSlots.forEach(() => rowData.push('Away'));
-    }
-
-    const row = worksheet.addRow(rowData);
-
-    row.eachCell((cell, colNumber) => {
+    headerRow.eachCell((cell, colNumber) => {
+      cell.font = { bold: true, size: 8 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
       cell.border = {
         top: { style: 'thin' },
         left: { style: 'thin' },
         bottom: { style: 'thin' },
         right: { style: 'thin' },
       };
-      cell.alignment = { horizontal: 'center' };
-      cell.font = { size: 8 };
-
-      // Color code productivity cells
-      if (colNumber > 3) { // Skip name, work hours, date columns
-        const productivity = cell.value as string;
-        switch (productivity?.toLowerCase()) {
-          case 'core productive':
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF90EE90' } };
-            break;
-          case 'productive':
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFADD8E6' } };
-            break;
-          case 'unproductive':
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFA07A' } };
-            break;
-          case 'idle':
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-            break;
-          case 'away':
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } };
-            break;
-        }
-      }
+      cell.alignment = { horizontal: 'center', wrapText: true };
     });
-  });
 
-  // Add empty row
-  worksheet.addRow([]);
+    // Add data rows
+    data.forEach((item) => {
+      const rowData = [
+        item.name || 'N/A',
+        item.workingHour || '0:00',
+        formattedDate,
+      ];
 
-  // Add summary
-  const summaryRow = worksheet.addRow(['SUMMARY', `Total Employees: ${data.length}`, `Report Date: ${formattedDate}`]);
-  summaryRow.getCell(1).font = { bold: true };
-
-  const noteRow = worksheet.addRow(['NOTE:', 'Timeline shows productivity status in 10-minute intervals from 9:00 AM to 6:00 PM']);
-  noteRow.getCell(1).font = { bold: true };
-
-  // Set column widths
-  worksheet.getColumn(1).width = 20; // Employee Name
-  worksheet.getColumn(2).width = 12; // Work Hours
-  worksheet.getColumn(3).width = 12; // Date
-  
-  // Set narrow width for time slot columns
-  for (let i = 4; i <= headers.length; i++) {
-    worksheet.getColumn(i).width = 6;
-  }
-
-  return (await workbook.xlsx.writeBuffer()) as Buffer;
-}
-
-private async generateActivityTimelinePDF(data: any[], date: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ margin: 20, layout: 'landscape' });
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-
-      const formattedDate = this.formatDate(date);
-      const usersPerPage = 6; // Limit users per page for readability
-
-      // Split data into pages
-      const totalPages = Math.ceil(data.length / usersPerPage);
-
-      for (let pageNum = 0; pageNum < totalPages; pageNum++) {
-        if (pageNum > 0) doc.addPage({ layout: 'landscape' });
-
-        const startIndex = pageNum * usersPerPage;
-        const endIndex = Math.min(startIndex + usersPerPage, data.length);
-        const pageData = data.slice(startIndex, endIndex);
-
-        // Add title
-        doc.fontSize(16).font('Helvetica-Bold');
-        doc.text(`Activity Timeline Report - ${formattedDate}`, 50, 40);
-        doc.fontSize(12).font('Helvetica');
-        doc.text(`Page ${pageNum + 1} of ${totalPages}`, 50, 65);
-
-        let currentY = 100;
-
-        pageData.forEach((item, userIndex) => {
-          // User header
-          doc.fontSize(12).font('Helvetica-Bold');
-          doc.text(`${startIndex + userIndex + 1}. ${item.name || 'N/A'} - Work Hours: ${item.workingHour || '0:00'}`, 50, currentY);
-          
-          currentY += 25;
-
-          // Timeline grid
-          const startX = 50;
-          const cellWidth = 12;
-          const cellHeight = 20;
-
-          // Hour headers
-          doc.fontSize(8).font('Helvetica-Bold');
-          for (let hour = 9; hour <= 17; hour++) {
-            const x = startX + (hour - 9) * (cellWidth * 6);
-            doc.text(`${hour}:00`, x + 10, currentY - 5);
-          }
-
-          currentY += 15;
-
-          // Draw timeline grid
-          doc.fontSize(6).font('Helvetica');
-          
-          if (item.timeline && item.timeline.length > 0) {
-            item.timeline.forEach((segment, segmentIndex) => {
-              const hourIndex = Math.floor(segmentIndex / 6);
-              const segmentInHour = segmentIndex % 6;
-              
-              const x = startX + (hourIndex * 6 + segmentInHour) * cellWidth;
-              const y = currentY;
-
-              // Color code and fill cell based on productivity
-              const productivity = segment.productivity?.toLowerCase() || 'away';
-              let fillColor = '#D3D3D3'; // Default gray for away
-
-              switch (productivity) {
-                case 'core productive':
-                  fillColor = '#90EE90'; // Light green
-                  break;
-                case 'productive':
-                  fillColor = '#ADD8E6'; // Light blue
-                  break;
-                case 'unproductive':
-                  fillColor = '#FFA07A'; // Light salmon
-                  break;
-                case 'idle':
-                  fillColor = '#FFFF00'; // Yellow
-                  break;
-                case 'away':
-                  fillColor = '#D3D3D3'; // Gray
-                  break;
-              }
-
-              // Fill cell with color
-              doc.rect(x, y, cellWidth, cellHeight).fillAndStroke(fillColor, '#000000');
-
-              // Add productivity letter
-              const letter = productivity.charAt(0).toUpperCase();
-              doc.fillColor('#000000').text(letter, x + 4, y + 7, { width: cellWidth, align: 'center' });
-            });
-          } else {
-            // Fill with 'Away' if no data
-            for (let i = 0; i < 54; i++) {
-              const hourIndex = Math.floor(i / 6);
-              const segmentInHour = i % 6;
-              
-              const x = startX + (hourIndex * 6 + segmentInHour) * cellWidth;
-              const y = currentY;
-
-              doc.rect(x, y, cellWidth, cellHeight).fillAndStroke('#D3D3D3', '#000000');
-              doc.fillColor('#000000').text('A', x + 4, y + 7, { width: cellWidth, align: 'center' });
-            }
-          }
-
-          currentY += cellHeight + 20;
-
-          // Check if we need to move to next page
-          if (currentY > doc.page.height - 100 && userIndex < pageData.length - 1) {
-            doc.addPage({ layout: 'landscape' });
-            currentY = 50;
-          }
-        });
-
-        // Add legend at bottom of each page
-        if (pageNum === totalPages - 1) { // Only on last page
-          currentY = doc.page.height - 80;
-          doc.fontSize(10).font('Helvetica-Bold');
-          doc.text('Legend:', 50, currentY);
-          
-          currentY += 15;
-          doc.fontSize(8).font('Helvetica');
-          doc.text('C = Core Productive, P = Productive, U = Unproductive, I = Idle, A = Away', 50, currentY);
-        }
-      }
-
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-private generateActivityTimelineText(data: any[], date: string): string {
-  const formattedDate = this.formatDate(date);
-  const reportTitle = 'ACTIVITY TIMELINE REPORT';
-  const separator = '='.repeat(120);
-  const subSeparator = '-'.repeat(100);
-
-  let textContent = '';
-
-  // Header section
-  textContent += `${separator}\n`;
-  textContent += `${' '.repeat((120 - reportTitle.length) / 2)}${reportTitle}\n`;
-  textContent += `${separator}\n`;
-  textContent += `Report Date: ${formattedDate}\n`;
-  textContent += `Generated: ${new Date().toLocaleString('en-US', {
-    dateStyle: 'full',
-    timeStyle: 'short',
-  })}\n`;
-  textContent += `Total Employees: ${data.length}\n`;
-  textContent += `${separator}\n\n`;
-
-  // Split data into pages for readability (8 users per page for text format)
-  const usersPerPage = 8;
-  const totalPages = Math.ceil(data.length / usersPerPage);
-
-  for (let pageNum = 0; pageNum < totalPages; pageNum++) {
-    if (pageNum > 0) {
-      textContent += `\n${'='.repeat(50)} PAGE ${pageNum + 1} ${'='.repeat(50)}\n\n`;
-    }
-
-    const startIndex = pageNum * usersPerPage;
-    const endIndex = Math.min(startIndex + usersPerPage, data.length);
-    const pageData = data.slice(startIndex, endIndex);
-
-    pageData.forEach((item, userIndex) => {
-      const globalIndex = startIndex + userIndex;
-      textContent += `EMPLOYEE ${(globalIndex + 1).toString().padStart(3, '0')}\n`;
-      textContent += `${subSeparator}\n`;
-      textContent += `Name                : ${item.name || 'N/A'}\n`;
-      textContent += `Work Hours          : ${item.workingHour || '0:00'}\n`;
-      textContent += `Date                : ${formattedDate}\n`;
-      textContent += `Activity Timeline   : 9:00 AM - 6:00 PM (10-minute intervals)\n\n`;
-
-      // Create timeline visualization
+      // Add productivity data for each time slot
       if (item.timeline && item.timeline.length > 0) {
-        // Group by hours for better readability
-        for (let hour = 9; hour <= 17; hour++) {
-          const hourSegments = item.timeline.slice((hour - 9) * 6, (hour - 9) * 6 + 6);
-          
-          textContent += `${hour.toString().padStart(2, '0')}:00 - ${hour.toString().padStart(2, '0')}:59  `;
-          
-          hourSegments.forEach(segment => {
-            const symbol = this.getProductivitySymbol(segment.productivity);
-            textContent += symbol;
-          });
-          
-          textContent += `  [${this.getHourSummary(hourSegments)}]\n`;
-        }
-      } else {
-        textContent += `No activity data available for this date.\n`;
-      }
-
-      textContent += `\n${subSeparator}\n\n`;
-    });
-  }
-
-  // Summary section
-  textContent += `${separator}\n`;
-  textContent += `SUMMARY\n`;
-  textContent += `${separator}\n`;
-
-  if (data.length > 0) {
-    let totalCoreProductive = 0;
-    let totalProductive = 0;
-    let totalUnproductive = 0;
-    let totalIdle = 0;
-    let totalAway = 0;
-
-    data.forEach(item => {
-      if (item.timeline) {
-        item.timeline.forEach(segment => {
-          const productivity = segment.productivity?.toLowerCase() || 'away';
-          switch (productivity) {
-            case 'core productive': totalCoreProductive++; break;
-            case 'productive': totalProductive++; break;
-            case 'unproductive': totalUnproductive++; break;
-            case 'idle': totalIdle++; break;
-            case 'away': totalAway++; break;
-          }
+        item.timeline.forEach((segment) => {
+          rowData.push(this.getProductivityDisplayText(segment.productivity));
         });
+      } else {
+        // Fill with 'Away' if no data
+        timeSlots.forEach(() => rowData.push('Away'));
+      }
+
+      const row = worksheet.addRow(rowData);
+
+      row.eachCell((cell, colNumber) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+        cell.alignment = { horizontal: 'center' };
+        cell.font = { size: 8 };
+
+        // Color code productivity cells
+        if (colNumber > 3) {
+          // Skip name, work hours, date columns
+          const productivity = cell.value as string;
+          switch (productivity?.toLowerCase()) {
+            case 'core productive':
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF90EE90' },
+              };
+              break;
+            case 'productive':
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFADD8E6' },
+              };
+              break;
+            case 'unproductive':
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFFA07A' },
+              };
+              break;
+            case 'idle':
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFFFF00' },
+              };
+              break;
+            case 'away':
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFD3D3D3' },
+              };
+              break;
+          }
+        }
+      });
+    });
+
+    // Add empty row
+    worksheet.addRow([]);
+
+    // Add summary
+    const summaryRow = worksheet.addRow([
+      'SUMMARY',
+      `Total Employees: ${data.length}`,
+      `Report Date: ${formattedDate}`,
+    ]);
+    summaryRow.getCell(1).font = { bold: true };
+
+    const noteRow = worksheet.addRow([
+      'NOTE:',
+      'Timeline shows productivity status in 10-minute intervals from 9:00 AM to 6:00 PM',
+    ]);
+    noteRow.getCell(1).font = { bold: true };
+
+    // Set column widths
+    worksheet.getColumn(1).width = 20; // Employee Name
+    worksheet.getColumn(2).width = 12; // Work Hours
+    worksheet.getColumn(3).width = 12; // Date
+
+    // Set narrow width for time slot columns
+    for (let i = 4; i <= headers.length; i++) {
+      worksheet.getColumn(i).width = 6;
+    }
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
+
+  }
+
+  private async generateActivityTimelinePDF(
+    data: any[],
+    date: string,
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 20, layout: 'landscape' });
+        const chunks: Buffer[] = [];
+
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+        const formattedDate = this.formatDate(date);
+        const usersPerPage = 6; // Limit users per page for readability
+
+        // Split data into pages
+        const totalPages = Math.ceil(data.length / usersPerPage);
+
+        for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+          if (pageNum > 0) doc.addPage({ layout: 'landscape' });
+
+          const startIndex = pageNum * usersPerPage;
+          const endIndex = Math.min(startIndex + usersPerPage, data.length);
+          const pageData = data.slice(startIndex, endIndex);
+
+          // Add title
+          doc.fontSize(16).font('Helvetica-Bold');
+          doc.text(`Activity Timeline Report - ${formattedDate}`, 50, 40);
+          doc.fontSize(12).font('Helvetica');
+          doc.text(`Page ${pageNum + 1} of ${totalPages}`, 50, 65);
+
+          let currentY = 100;
+
+          pageData.forEach((item, userIndex) => {
+            // User header
+            doc.fontSize(12).font('Helvetica-Bold');
+            doc.text(
+              `${startIndex + userIndex + 1}. ${item.name || 'N/A'} - Work Hours: ${item.workingHour || '0:00'}`,
+              50,
+              currentY,
+            );
+
+            currentY += 25;
+
+            // Timeline grid
+            const startX = 50;
+            const cellWidth = 12;
+            const cellHeight = 20;
+
+            // Hour headers
+            doc.fontSize(8).font('Helvetica-Bold');
+            for (let hour = 9; hour <= 17; hour++) {
+              const x = startX + (hour - 9) * (cellWidth * 6);
+              doc.text(`${hour}:00`, x + 10, currentY - 5);
+            }
+
+            currentY += 15;
+
+            // Draw timeline grid
+            doc.fontSize(6).font('Helvetica');
+
+            if (item.timeline && item.timeline.length > 0) {
+              item.timeline.forEach((segment, segmentIndex) => {
+                const hourIndex = Math.floor(segmentIndex / 6);
+                const segmentInHour = segmentIndex % 6;
+
+                const x = startX + (hourIndex * 6 + segmentInHour) * cellWidth;
+                const y = currentY;
+
+                // Color code and fill cell based on productivity
+                const productivity =
+                  segment.productivity?.toLowerCase() || 'away';
+                let fillColor = '#D3D3D3'; // Default gray for away
+
+                switch (productivity) {
+                  case 'core productive':
+                    fillColor = '#90EE90'; // Light green
+                    break;
+                  case 'productive':
+                    fillColor = '#ADD8E6'; // Light blue
+                    break;
+                  case 'unproductive':
+                    fillColor = '#FFA07A'; // Light salmon
+                    break;
+                  case 'idle':
+                    fillColor = '#FFFF00'; // Yellow
+                    break;
+                  case 'away':
+                    fillColor = '#D3D3D3'; // Gray
+                    break;
+                }
+
+                // Fill cell with color
+                doc
+                  .rect(x, y, cellWidth, cellHeight)
+                  .fillAndStroke(fillColor, '#000000');
+
+                // Add productivity letter
+                const letter = productivity.charAt(0).toUpperCase();
+                doc
+                  .fillColor('#000000')
+                  .text(letter, x + 4, y + 7, {
+                    width: cellWidth,
+                    align: 'center',
+                  });
+              });
+            } else {
+              // Fill with 'Away' if no data
+              for (let i = 0; i < 54; i++) {
+                const hourIndex = Math.floor(i / 6);
+                const segmentInHour = i % 6;
+
+                const x = startX + (hourIndex * 6 + segmentInHour) * cellWidth;
+                const y = currentY;
+
+                doc
+                  .rect(x, y, cellWidth, cellHeight)
+                  .fillAndStroke('#D3D3D3', '#000000');
+                doc
+                  .fillColor('#000000')
+                  .text('A', x + 4, y + 7, {
+                    width: cellWidth,
+                    align: 'center',
+                  });
+              }
+            }
+
+            currentY += cellHeight + 20;
+
+            // Check if we need to move to next page
+            if (
+              currentY > doc.page.height - 100 &&
+              userIndex < pageData.length - 1
+            ) {
+              doc.addPage({ layout: 'landscape' });
+              currentY = 50;
+            }
+          });
+
+          // Add legend at bottom of each page
+          if (pageNum === totalPages - 1) {
+            // Only on last page
+            currentY = doc.page.height - 80;
+            doc.fontSize(10).font('Helvetica-Bold');
+            doc.text('Legend:', 50, currentY);
+
+            currentY += 15;
+            doc.fontSize(8).font('Helvetica');
+            doc.text(
+              'C = Core Productive, P = Productive, U = Unproductive, I = Idle, A = Away',
+              50,
+              currentY,
+            );
+          }
+        }
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  private generateActivityTimelineText(data: any[], date: string): string {
+    const formattedDate = this.formatDate(date);
+    const reportTitle = 'ACTIVITY TIMELINE REPORT';
+    const separator = '='.repeat(120);
+    const subSeparator = '-'.repeat(100);
+
+    let textContent = '';
+
+    // Header section
+    textContent += `${separator}\n`;
+    textContent += `${' '.repeat((120 - reportTitle.length) / 2)}${reportTitle}\n`;
+    textContent += `${separator}\n`;
+    textContent += `Report Date: ${formattedDate}\n`;
+    textContent += `Generated: ${new Date().toLocaleString('en-US', {
+      dateStyle: 'full',
+      timeStyle: 'short',
+    })}\n`;
+    textContent += `Total Employees: ${data.length}\n`;
+    textContent += `${separator}\n\n`;
+
+    // Split data into pages for readability (8 users per page for text format)
+    const usersPerPage = 8;
+    const totalPages = Math.ceil(data.length / usersPerPage);
+
+    for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+      if (pageNum > 0) {
+        textContent += `\n${'='.repeat(50)} PAGE ${pageNum + 1} ${'='.repeat(50)}\n\n`;
+      }
+
+      const startIndex = pageNum * usersPerPage;
+      const endIndex = Math.min(startIndex + usersPerPage, data.length);
+      const pageData = data.slice(startIndex, endIndex);
+
+      pageData.forEach((item, userIndex) => {
+        const globalIndex = startIndex + userIndex;
+        textContent += `EMPLOYEE ${(globalIndex + 1).toString().padStart(3, '0')}\n`;
+        textContent += `${subSeparator}\n`;
+        textContent += `Name                : ${item.name || 'N/A'}\n`;
+        textContent += `Work Hours          : ${item.workingHour || '0:00'}\n`;
+        textContent += `Date                : ${formattedDate}\n`;
+        textContent += `Activity Timeline   : 9:00 AM - 6:00 PM (10-minute intervals)\n\n`;
+
+        // Create timeline visualization
+        if (item.timeline && item.timeline.length > 0) {
+          // Group by hours for better readability
+          for (let hour = 9; hour <= 17; hour++) {
+            const hourSegments = item.timeline.slice(
+              (hour - 9) * 6,
+              (hour - 9) * 6 + 6,
+            );
+
+            textContent += `${hour.toString().padStart(2, '0')}:00 - ${hour.toString().padStart(2, '0')}:59  `;
+
+            hourSegments.forEach((segment) => {
+              const symbol = this.getProductivitySymbol(segment.productivity);
+              textContent += symbol;
+            });
+
+            textContent += `  [${this.getHourSummary(hourSegments)}]\n`;
+          }
+        } else {
+          textContent += `No activity data available for this date.\n`;
+        }
+
+        textContent += `\n${subSeparator}\n\n`;
+      });
+    }
+
+    // Summary section
+    textContent += `${separator}\n`;
+    textContent += `SUMMARY\n`;
+    textContent += `${separator}\n`;
+
+    if (data.length > 0) {
+      let totalCoreProductive = 0;
+      let totalProductive = 0;
+      let totalUnproductive = 0;
+      let totalIdle = 0;
+      let totalAway = 0;
+
+      data.forEach((item) => {
+        if (item.timeline) {
+          item.timeline.forEach((segment) => {
+            const productivity = segment.productivity?.toLowerCase() || 'away';
+            switch (productivity) {
+              case 'core productive':
+                totalCoreProductive++;
+                break;
+              case 'productive':
+                totalProductive++;
+                break;
+              case 'unproductive':
+                totalUnproductive++;
+                break;
+              case 'idle':
+                totalIdle++;
+                break;
+              case 'away':
+                totalAway++;
+                break;
+            }
+          });
+        }
+      });
+
+      const totalSegments =
+        totalCoreProductive +
+        totalProductive +
+        totalUnproductive +
+        totalIdle +
+        totalAway;
+
+      textContent += `Total Employees             : ${data.length.toString().padStart(6)}\n`;
+      textContent += `Total Time Segments         : ${totalSegments.toString().padStart(6)}\n`;
+      textContent += `Core Productive Segments    : ${totalCoreProductive.toString().padStart(6)} (${totalSegments > 0 ? ((totalCoreProductive / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
+      textContent += `Productive Segments         : ${totalProductive.toString().padStart(6)} (${totalSegments > 0 ? ((totalProductive / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
+      textContent += `Unproductive Segments       : ${totalUnproductive.toString().padStart(6)} (${totalSegments > 0 ? ((totalUnproductive / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
+      textContent += `Idle Segments               : ${totalIdle.toString().padStart(6)} (${totalSegments > 0 ? ((totalIdle / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
+      textContent += `Away Segments               : ${totalAway.toString().padStart(6)} (${totalSegments > 0 ? ((totalAway / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
+    }
+
+    textContent += `${separator}\n`;
+    textContent += `LEGEND:\n`;
+    textContent += `■ = Core Productive    ▓ = Productive    ▒ = Unproductive    ░ = Idle    · = Away\n`;
+    textContent += `${separator}\n`;
+    textContent += `End of Report\n`;
+    textContent += `${separator}`;
+
+    return textContent;
+  }
+
+  // Helper methods for activity timeline export
+
+  private getProductivityDisplayText(productivity: string): string {
+    const productivityMap = {
+      'core productive': 'Core Productive',
+      productive: 'Productive',
+      unproductive: 'Unproductive',
+      idle: 'Idle',
+      away: 'Away',
+    };
+    return productivityMap[productivity?.toLowerCase()] || 'Away';
+  }
+
+  private getProductivitySymbol(productivity: string): string {
+    const symbolMap = {
+      'core productive': '■',
+      productive: '▓',
+      unproductive: '▒',
+      idle: '░',
+      away: '·',
+    };
+    return symbolMap[productivity?.toLowerCase()] || '·';
+  }
+
+  private getHourSummary(hourSegments: any[]): string {
+    const counts = {
+      'core productive': 0,
+      productive: 0,
+      unproductive: 0,
+      idle: 0,
+      away: 0,
+    };
+
+    hourSegments.forEach((segment) => {
+      const productivity = segment.productivity?.toLowerCase() || 'away';
+      if (counts.hasOwnProperty(productivity)) {
+        counts[productivity]++;
       }
     });
 
-    const totalSegments = totalCoreProductive + totalProductive + totalUnproductive + totalIdle + totalAway;
+    // Find the most common productivity status for this hour
+    const maxCount = Math.max(...Object.values(counts));
+    const dominantStatus = Object.keys(counts).find(
+      (key) => counts[key] === maxCount,
+    );
 
-    textContent += `Total Employees             : ${data.length.toString().padStart(6)}\n`;
-    textContent += `Total Time Segments         : ${totalSegments.toString().padStart(6)}\n`;
-    textContent += `Core Productive Segments    : ${totalCoreProductive.toString().padStart(6)} (${totalSegments > 0 ? ((totalCoreProductive / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
-    textContent += `Productive Segments         : ${totalProductive.toString().padStart(6)} (${totalSegments > 0 ? ((totalProductive / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
-    textContent += `Unproductive Segments       : ${totalUnproductive.toString().padStart(6)} (${totalSegments > 0 ? ((totalUnproductive / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
-    textContent += `Idle Segments               : ${totalIdle.toString().padStart(6)} (${totalSegments > 0 ? ((totalIdle / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
-    textContent += `Away Segments               : ${totalAway.toString().padStart(6)} (${totalSegments > 0 ? ((totalAway / totalSegments) * 100).toFixed(1) : '0.0'}%)\n`;
+    return this.getProductivityDisplayText(dominantStatus);
   }
-
-  textContent += `${separator}\n`;
-  textContent += `LEGEND:\n`;
-  textContent += `■ = Core Productive    ▓ = Productive    ▒ = Unproductive    ░ = Idle    · = Away\n`;
-  textContent += `${separator}\n`;
-  textContent += `End of Report\n`;
-  textContent += `${separator}`;
-
-  return textContent;
-}
-
-// Helper methods for activity timeline export
-
-private getProductivityDisplayText(productivity: string): string {
-  const productivityMap = {
-    'core productive': 'Core Productive',
-    'productive': 'Productive',
-    'unproductive': 'Unproductive',
-    'idle': 'Idle',
-    'away': 'Away',
-  };
-  return productivityMap[productivity?.toLowerCase()] || 'Away';
-}
-
-private getProductivitySymbol(productivity: string): string {
-  const symbolMap = {
-    'core productive': '■',
-    'productive': '▓',
-    'unproductive': '▒',
-    'idle': '░',
-    'away': '·',
-  };
-  return symbolMap[productivity?.toLowerCase()] || '·';
-}
-
-private getHourSummary(hourSegments: any[]): string {
-  const counts = {
-    'core productive': 0,
-    'productive': 0,
-    'unproductive': 0,
-    'idle': 0,
-    'away': 0,
-  };
-
-  hourSegments.forEach(segment => {
-    const productivity = segment.productivity?.toLowerCase() || 'away';
-    if (counts.hasOwnProperty(productivity)) {
-      counts[productivity]++;
-    }
-  });
-
-  // Find the most common productivity status for this hour
-  const maxCount = Math.max(...Object.values(counts));
-  const dominantStatus = Object.keys(counts).find(key => counts[key] === maxCount);
-  
-  return this.getProductivityDisplayText(dominantStatus);
-}
   private getStatusDisplayText(status: string): string {
     const statusMap = {
       fullDay: 'Full Day',
@@ -1318,108 +1419,82 @@ private getHourSummary(hourSegments: any[]): string {
     return dateHeaders;
   }
 
-private async generateAttendanceCSV(
-  data: any[],
-  startDate: string,
-  endDate: string,
-): Promise<string> {
-  const dateHeaders = this.getDateHeaders(data);
-  const headers = [
-    'Employee Name',
-    'Total Work Days (excluding holidays)',
-    'Holidays',
-    ...dateHeaders,
-  ];
-
-  let csvContent = headers.join(',') + '\n';
-
-  data.forEach((item) => {
-    const row = [
-      `"${item.name || 'N/A'}"`,
-      `"${item.totalWorkDays || 0}"`,
-      `"${item.holidays || 0}"`,
+  private async generateAttendanceCSV(
+    data: any[],
+    startDate: string,
+    endDate: string,
+  ): Promise<string> {
+    const dateHeaders = this.getDateHeaders(data);
+    const headers = [
+      'Employee Name',
+      'Total Work Days (excluding holidays)',
+      'Holidays',
+      ...dateHeaders,
     ];
 
-    // Add status for each date
-    let index = 1;
-    while (item[`status_${index}`]) {
-      row.push(`"${item[`status_${index}`] || 'N/A'}"`);
-      index++;
-    }
+    let csvContent = headers.join(',') + '\n';
 
-    csvContent += row.join(',') + '\n';
-  });
+    data.forEach((item) => {
+      const row = [
+        `"${item.name || 'N/A'}"`,
+        `"${item.totalWorkDays || 0}"`,
+        `"${item.holidays || 0}"`,
+      ];
 
-  // Add summary row
-  csvContent += '\n';
-  csvContent += '"SUMMARY:"\n';
-  csvContent += `"Total Employees","${data.length}"\n`;
-  csvContent += '"NOTE: Total Work Days exclude holidays"\n';
+      // Add status for each date
+      let index = 1;
+      while (item[`status_${index}`]) {
+        row.push(`"${item[`status_${index}`] || 'N/A'}"`);
+        index++;
+      }
 
-  return csvContent;
-}
+      csvContent += row.join(',') + '\n';
+    });
 
-private async generateAttendanceExcel(
-  data: any[],
-  startDate: string,
-  endDate: string,
-): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Attendance Report');
+    // Add summary row
+    csvContent += '\n';
+    csvContent += '"SUMMARY:"\n';
+    csvContent += `"Total Employees","${data.length}"\n`;
+    csvContent += '"NOTE: Total Work Days exclude holidays"\n';
 
-  // Add title
-  const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
-  worksheet.mergeCells(
-    'A1:' + this.getColumnLetter(3 + this.getDateHeaders(data).length) + '1',
-  );
-  const titleCell = worksheet.getCell('A1');
-  titleCell.value = `Attendance Report - ${dateRange}`;
-  titleCell.font = { bold: true, size: 16 };
-  titleCell.alignment = { horizontal: 'center' };
+    return csvContent;
+  }
 
-  // Add headers
-  const dateHeaders = this.getDateHeaders(data);
-  const headers = [
-    'Employee Name',
-    'Total Work Days (excluding holidays)',
-    'Holidays',
-    ...dateHeaders,
-  ];
-  const headerRow = worksheet.addRow(headers);
+  private async generateAttendanceExcel(
+    data: any[],
+    startDate: string,
+    endDate: string,
+  ): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Attendance Report');
 
-  headerRow.eachCell((cell) => {
-    cell.font = { bold: true };
-    cell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' },
-    };
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' },
-    };
-  });
+    // Add title
+    const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
+    worksheet.mergeCells(
+      'A1:' + this.getColumnLetter(3 + this.getDateHeaders(data).length) + '1',
+    );
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = `Attendance Report - ${dateRange}`;
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: 'center' };
 
-  // Add data rows
-  data.forEach((item) => {
-    const rowData = [
-      item.name || 'N/A',
-      item.totalWorkDays || 0,
-      item.holidays || 0,
+    // Add headers
+    const dateHeaders = this.getDateHeaders(data);
+    const headers = [
+      'Employee Name',
+      'Total Work Days (excluding holidays)',
+      'Holidays',
+      ...dateHeaders,
     ];
+    const headerRow = worksheet.addRow(headers);
 
-    // Add status for each date
-    let index = 1;
-    while (item[`status_${index}`]) {
-      rowData.push(item[`status_${index}`] || 'N/A');
-      index++;
-    }
-
-    const row = worksheet.addRow(rowData);
-
-    row.eachCell((cell) => {
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
       cell.border = {
         top: { style: 'thin' },
         left: { style: 'thin' },
@@ -1427,25 +1502,57 @@ private async generateAttendanceExcel(
         right: { style: 'thin' },
       };
     });
-  });
 
-  // Add empty row
-  worksheet.addRow([]);
+    // Add data rows
+    data.forEach((item) => {
+      const rowData = [
+        item.name || 'N/A',
+        item.totalWorkDays || 0,
+        item.holidays || 0,
+      ];
 
-  // Add summary
-  const summaryRow = worksheet.addRow(['SUMMARY', `Total Employees: ${data.length}`]);
-  summaryRow.getCell(1).font = { bold: true };
-  
-  const noteRow = worksheet.addRow(['NOTE:', 'Total Work Days exclude holidays']);
-  noteRow.getCell(1).font = { bold: true };
+      // Add status for each date
+      let index = 1;
+      while (item[`status_${index}`]) {
+        rowData.push(item[`status_${index}`] || 'N/A');
+        index++;
+      }
 
-  // Auto-fit columns
-  worksheet.columns.forEach((column) => {
-    column.width = 15;
-  });
+      const row = worksheet.addRow(rowData);
 
-  return (await workbook.xlsx.writeBuffer()) as Buffer;
-}
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+    });
+
+    // Add empty row
+    worksheet.addRow([]);
+
+    // Add summary
+    const summaryRow = worksheet.addRow([
+      'SUMMARY',
+      `Total Employees: ${data.length}`,
+    ]);
+    summaryRow.getCell(1).font = { bold: true };
+
+    const noteRow = worksheet.addRow([
+      'NOTE:',
+      'Total Work Days exclude holidays',
+    ]);
+    noteRow.getCell(1).font = { bold: true };
+
+    // Auto-fit columns
+    worksheet.columns.forEach((column) => {
+      column.width = 15;
+    });
+    const arrayBuffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(arrayBuffer);
+  }
 
   private async generateAttendancePDF(
     data: any[],
@@ -1620,101 +1727,101 @@ private async generateAttendanceExcel(
       }
     });
   }
-private generateAttendanceText(
-  data: any[],
-  startDate: string,
-  endDate: string,
-): string {
-  const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
-  const reportTitle = 'ATTENDANCE REPORT';
-  const separator = '='.repeat(100);
-  const subSeparator = '-'.repeat(80);
+  private generateAttendanceText(
+    data: any[],
+    startDate: string,
+    endDate: string,
+  ): string {
+    const dateRange = `${this.formatDate(startDate)} to ${this.formatDate(endDate)}`;
+    const reportTitle = 'ATTENDANCE REPORT';
+    const separator = '='.repeat(100);
+    const subSeparator = '-'.repeat(80);
 
-  let textContent = '';
+    let textContent = '';
 
-  // Header section
-  textContent += `${separator}\n`;
-  textContent += `${' '.repeat((100 - reportTitle.length) / 2)}${reportTitle}\n`;
-  textContent += `${separator}\n`;
-  textContent += `Report Period: ${dateRange}\n`;
-  textContent += `Generated: ${new Date().toLocaleString('en-US', {
-    dateStyle: 'full',
-    timeStyle: 'short',
-  })}\n`;
-  textContent += `Total Employees: ${data.length}\n`;
-  textContent += `${separator}\n\n`;
+    // Header section
+    textContent += `${separator}\n`;
+    textContent += `${' '.repeat((100 - reportTitle.length) / 2)}${reportTitle}\n`;
+    textContent += `${separator}\n`;
+    textContent += `Report Period: ${dateRange}\n`;
+    textContent += `Generated: ${new Date().toLocaleString('en-US', {
+      dateStyle: 'full',
+      timeStyle: 'short',
+    })}\n`;
+    textContent += `Total Employees: ${data.length}\n`;
+    textContent += `${separator}\n\n`;
 
-  // Employee data section
-  if (data.length === 0) {
-    textContent += `No attendance data found for the specified period.\n`;
-  } else {
-    data.forEach((item, index) => {
-      textContent += `EMPLOYEE ${(index + 1).toString().padStart(3, '0')}\n`;
+    // Employee data section
+    if (data.length === 0) {
+      textContent += `No attendance data found for the specified period.\n`;
+    } else {
+      data.forEach((item, index) => {
+        textContent += `EMPLOYEE ${(index + 1).toString().padStart(3, '0')}\n`;
+        textContent += `${subSeparator}\n`;
+        textContent += `Name              : ${item.name || 'N/A'}\n`;
+        textContent += `Total Work Days   : ${item.totalWorkDays || 0} (excluding holidays)\n`; // Added clarification
+        textContent += `Holidays          : ${item.holidays || 0}\n`;
+
+        // Add daily attendance
+        textContent += `Daily Attendance  :\n`;
+        let index_inner = 1;
+        while (item[`date_${index_inner}`]) {
+          const date = item[`date_${index_inner}`];
+          const status = item[`status_${index_inner}`] || 'N/A';
+          textContent += `  ${date.padEnd(12)} : ${status}\n`;
+          index_inner++;
+        }
+
+        textContent += `${subSeparator}\n\n`;
+      });
+    }
+
+    // Summary section with corrected calculations
+    textContent += `${separator}\n`;
+    textContent += `SUMMARY\n`;
+    textContent += `${separator}\n`;
+
+    if (data.length > 0) {
+      let totalFullDays = 0;
+      let totalHalfDays = 0;
+      let totalAbsent = 0;
+      let totalHolidays = 0;
+      let totalWorkDaysSum = 0;
+      let totalHolidaysSum = 0;
+
+      data.forEach((item) => {
+        totalWorkDaysSum += item.totalWorkDays || 0;
+        totalHolidaysSum += item.holidays || 0;
+
+        let index = 1;
+        while (item[`status_${index}`]) {
+          const status = item[`status_${index}`];
+          if (status === 'Full Day') totalFullDays++;
+          else if (status === 'Half Day') totalHalfDays++;
+          else if (status === 'Absent') totalAbsent++;
+          else if (status === 'Holiday') totalHolidays++;
+          index++;
+        }
+      });
+
+      textContent += `Total Full Day Attendance     : ${totalFullDays.toString().padStart(6)}\n`;
+      textContent += `Total Half Day Attendance     : ${totalHalfDays.toString().padStart(6)}\n`;
+      textContent += `Total Absences                : ${totalAbsent.toString().padStart(6)}\n`;
+      textContent += `Total Holiday Records         : ${totalHolidays.toString().padStart(6)}\n`;
       textContent += `${subSeparator}\n`;
-      textContent += `Name              : ${item.name || 'N/A'}\n`;
-      textContent += `Total Work Days   : ${item.totalWorkDays || 0} (excluding holidays)\n`; // Added clarification
-      textContent += `Holidays          : ${item.holidays || 0}\n`;
+      textContent += `Total Employees               : ${data.length.toString().padStart(6)}\n`;
+      textContent += `Average Work Days per Employee: ${(totalWorkDaysSum / data.length).toFixed(1).padStart(6)}\n`;
+      textContent += `Average Holidays per Employee : ${(totalHolidaysSum / data.length).toFixed(1).padStart(6)}\n`;
+    }
 
-      // Add daily attendance
-      textContent += `Daily Attendance  :\n`;
-      let index_inner = 1;
-      while (item[`date_${index_inner}`]) {
-        const date = item[`date_${index_inner}`];
-        const status = item[`status_${index_inner}`] || 'N/A';
-        textContent += `  ${date.padEnd(12)} : ${status}\n`;
-        index_inner++;
-      }
+    textContent += `${separator}\n`;
+    textContent += `NOTE: Total Work Days = Total Days in Period - Holidays\n`;
+    textContent += `${separator}\n`;
+    textContent += `End of Report\n`;
+    textContent += `${separator}`;
 
-      textContent += `${subSeparator}\n\n`;
-    });
+    return textContent;
   }
-
-  // Summary section with corrected calculations
-  textContent += `${separator}\n`;
-  textContent += `SUMMARY\n`;
-  textContent += `${separator}\n`;
-
-  if (data.length > 0) {
-    let totalFullDays = 0;
-    let totalHalfDays = 0;
-    let totalAbsent = 0;
-    let totalHolidays = 0;
-    let totalWorkDaysSum = 0;
-    let totalHolidaysSum = 0;
-
-    data.forEach((item) => {
-      totalWorkDaysSum += item.totalWorkDays || 0;
-      totalHolidaysSum += item.holidays || 0;
-      
-      let index = 1;
-      while (item[`status_${index}`]) {
-        const status = item[`status_${index}`];
-        if (status === 'Full Day') totalFullDays++;
-        else if (status === 'Half Day') totalHalfDays++;
-        else if (status === 'Absent') totalAbsent++;
-        else if (status === 'Holiday') totalHolidays++;
-        index++;
-      }
-    });
-
-    textContent += `Total Full Day Attendance     : ${totalFullDays.toString().padStart(6)}\n`;
-    textContent += `Total Half Day Attendance     : ${totalHalfDays.toString().padStart(6)}\n`;
-    textContent += `Total Absences                : ${totalAbsent.toString().padStart(6)}\n`;
-    textContent += `Total Holiday Records         : ${totalHolidays.toString().padStart(6)}\n`;
-    textContent += `${subSeparator}\n`;
-    textContent += `Total Employees               : ${data.length.toString().padStart(6)}\n`;
-    textContent += `Average Work Days per Employee: ${(totalWorkDaysSum / data.length).toFixed(1).padStart(6)}\n`;
-    textContent += `Average Holidays per Employee : ${(totalHolidaysSum / data.length).toFixed(1).padStart(6)}\n`;
-  }
-
-  textContent += `${separator}\n`;
-  textContent += `NOTE: Total Work Days = Total Days in Period - Holidays\n`;
-  textContent += `${separator}\n`;
-  textContent += `End of Report\n`;
-  textContent += `${separator}`;
-
-  return textContent;
-}
 
   // Helper method to convert column number to letter (for Excel)
   private getColumnLetter(columnNumber: number): string {
@@ -1983,11 +2090,17 @@ private generateAttendanceText(
       organization.logo = logoUrl;
       await this.organizationRepository.save(organization);
 
-      this.logger.log(`✅ Organization logo updated: ${organizationId} -> ${logoUrl}`);
+      this.logger.log(
+        `✅ Organization logo updated: ${organizationId} -> ${logoUrl}`,
+      );
       return true;
     } catch (error) {
-      this.logger.error(`❌ Error updating organization logo: ${error.message}`);
-      throw new BadRequestException(`Error updating organization logo: ${error.message}`);
+      this.logger.error(
+        `❌ Error updating organization logo: ${error.message}`,
+      );
+      throw new BadRequestException(
+        `Error updating organization logo: ${error.message}`,
+      );
     }
   }
   async fetchScreenShot(): Promise<any[]> {
@@ -2063,30 +2176,33 @@ private generateAttendanceText(
     return savedDesktopApp;
   }
 
-  async findOrganization(name: string, organizationAdminId?: string): Promise<Organization> {
-    // If organizationAdminId is provided, check for organization with same name 
+  async findOrganization(
+    name: string,
+    organizationAdminId?: string,
+  ): Promise<Organization> {
+    // If organizationAdminId is provided, check for organization with same name
     // that belongs to the same admin (to prevent duplicate orgs for same admin)
     if (organizationAdminId) {
       // First find the admin to get their organization ID
       const admin = await this.organizationAdminRepository.findOne({
-        where: { id: organizationAdminId }
+        where: { id: organizationAdminId },
       });
-      
+
       if (!admin || !admin.OrganizationId) {
         return null;
       }
-      
+
       // Check if organization with same name exists and belongs to this admin
       let isOrganization = await this.organizationRepository.findOne({
-        where: { 
+        where: {
           name,
-          id: admin.OrganizationId
-        }
+          id: admin.OrganizationId,
+        },
       });
-      
+
       return isOrganization;
     }
-    
+
     // Fallback to original logic if no admin ID provided
     let isOrganization = await this.organizationRepository.findOne({
       where: { name },
@@ -2779,67 +2895,68 @@ private generateAttendanceText(
     return false;
   }
 
-async createDeviceForUser(
-  organization_uid: string,
-  userName: string,
-  email: string,
-  user_uid: string,
-  mac_address: string,
-): Promise<string> {
-  console.log('Entering device creation');
+  async createDeviceForUser(
+    organization_uid: string,
+    userName: string,
+    email: string,
+    user_uid: string,
+    mac_address: string,
+  ): Promise<string> {
+    console.log('Entering device creation');
 
-  // Convert empty strings to null for UUID fields
-  const cleanUserUid = user_uid && user_uid.trim() !== '' ? user_uid : null;
-  const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
+    // Convert empty strings to null for UUID fields
+    const cleanUserUid = user_uid && user_uid.trim() !== '' ? user_uid : null;
+    const cleanMacAddress =
+      mac_address && mac_address.trim() !== '' ? mac_address : null;
 
-  // Check if a device already exists for the user (only if user_uid is not null)
-  let isDeviceAlreadyExist = null;
-  if (cleanUserUid) {
-    isDeviceAlreadyExist = await this.devicesRepository.findOne({
-      where: { user_uid: cleanUserUid },
+    // Check if a device already exists for the user (only if user_uid is not null)
+    let isDeviceAlreadyExist = null;
+    if (cleanUserUid) {
+      isDeviceAlreadyExist = await this.devicesRepository.findOne({
+        where: { user_uid: cleanUserUid },
+      });
+      console.log('Device already exists:', isDeviceAlreadyExist);
+
+      if (isDeviceAlreadyExist) {
+        return isDeviceAlreadyExist.device_uid;
+      }
+    }
+
+    // Efficiently find the last device with the highest number
+    const lastDevice = await this.devicesRepository
+      .createQueryBuilder('device')
+      .where('device.organization_uid = :orgId', { orgId: organization_uid })
+      .orderBy('device.created_at', 'DESC')
+      .getOne();
+
+    let nextDeviceNumber = 1;
+    if (lastDevice?.device_name) {
+      const match = lastDevice.device_name.match(/Device-(\d+)/);
+      if (match) {
+        const lastNumber = parseInt(match[1]);
+        nextDeviceNumber = lastNumber + 1;
+      }
+    }
+
+    const deviceName = `Device-${nextDeviceNumber}`;
+
+    // Create the device for the user
+    console.log('Creating device with name:', deviceName);
+    const deviceForUser = this.devicesRepository.create({
+      organization_uid,
+      user_name: userName,
+      user_uid: cleanUserUid,
+      mac_address: cleanMacAddress,
+      device_name: deviceName,
+      config: { trackTimeStatus: TrackTimeStatus.Resume },
     });
-    console.log('Device already exists:', isDeviceAlreadyExist);
 
-    if (isDeviceAlreadyExist) {
-      return isDeviceAlreadyExist.device_uid;
-    }
+    // Save the new device to the database
+    const savedDevice = await this.devicesRepository.save(deviceForUser);
+    console.log('Created device:', savedDevice.device_uid);
+
+    return savedDevice.device_uid;
   }
-
-  // Efficiently find the last device with the highest number
-  const lastDevice = await this.devicesRepository
-    .createQueryBuilder('device')
-    .where('device.organization_uid = :orgId', { orgId: organization_uid })
-    .orderBy('device.created_at', 'DESC')
-    .getOne();
-
-  let nextDeviceNumber = 1;
-  if (lastDevice?.device_name) {
-    const match = lastDevice.device_name.match(/Device-(\d+)/);
-    if (match) {
-      const lastNumber = parseInt(match[1]);
-      nextDeviceNumber = lastNumber + 1;
-    }
-  }
-
-  const deviceName = `Device-${nextDeviceNumber}`;
-
-  // Create the device for the user
-  console.log('Creating device with name:', deviceName);
-  const deviceForUser = this.devicesRepository.create({
-    organization_uid,
-    user_name: userName,
-    user_uid: cleanUserUid,
-    mac_address: cleanMacAddress,
-    device_name: deviceName,
-    config: { trackTimeStatus: TrackTimeStatus.Resume },
-  });
-
-  // Save the new device to the database
-  const savedDevice = await this.devicesRepository.save(deviceForUser);
-  console.log('Created device:', savedDevice.device_uid);
-
-  return savedDevice.device_uid;
-}
 
   async getUserDeviceId(deviceId: string) {
     try {
@@ -2875,173 +2992,209 @@ async createDeviceForUser(
     } catch (err) {}
   }
 
-async checkDeviceIdExist(
-  mac_address: string,
-  device_user_name: string,
-): Promise<string> {
-  try {
-    const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
-    const cleanDeviceUserName = device_user_name && device_user_name.trim() !== '' ? device_user_name.trim().toLowerCase() : null;
-    
-    if (!cleanMacAddress || !cleanDeviceUserName) {
-      this.logger.warn('Missing mac_address or device_user_name');
-      return null;
-    }
+  async checkDeviceIdExist(
+    mac_address: string,
+    device_user_name: string,
+  ): Promise<string> {
+    try {
+      const cleanMacAddress =
+        mac_address && mac_address.trim() !== '' ? mac_address : null;
+      const cleanDeviceUserName =
+        device_user_name && device_user_name.trim() !== ''
+          ? device_user_name.trim().toLowerCase()
+          : null;
 
-    // Search by mac_address
-    const isExist = await this.devicesRepository.findOne({
-      where: { mac_address: cleanMacAddress },
-    });
+      if (!cleanMacAddress || !cleanDeviceUserName) {
+        this.logger.warn('Missing mac_address or device_user_name');
+        return null;
+      }
 
-    this.logger.debug(`Checking device - mac_address: ${cleanMacAddress}, device_user_name: ${device_user_name}`);
-    this.logger.debug(`Found device: ${JSON.stringify(isExist)}`);
-
-    // Verify both mac_address and device_name match
-    if (isExist && isExist.device_name && 
-        isExist.device_name.toLowerCase() === cleanDeviceUserName) {
-      this.logger.log(`Device found with matching mac_address and device_name: ${isExist.device_uid}`);
-      return isExist.device_uid;
-    }
-
-    this.logger.warn('Device not found or device_name mismatch');
-    return null;
-  } catch (err) {
-    this.logger.error(`Error in checkDeviceIdExist: ${err?.message}`, err?.stack);
-    return null;
-  }
-}
-  
-async checkDeviceIdExistWithDeviceId(
-  mac_address: string,
-  device_id: string,
-  device_user_name: string,
-): Promise<string> {
-  try {
-    // Clean the input parameters
-    const cleanMacAddress = mac_address && mac_address.trim() !== '' ? mac_address : null;
-    const cleanDeviceId = device_id && device_id.trim() !== '' ? device_id : null;
-    const cleanDeviceUserName = device_user_name && device_user_name.trim() !== '' ? device_user_name.trim() : null;
-
-    // Build the where conditions dynamically
-    const whereConditions: any[] = [];
-    
-    if (cleanDeviceId) {
-      whereConditions.push({ device_uid: cleanDeviceId });
-    }
-    
-    if (cleanMacAddress) {
-      whereConditions.push({ mac_address: cleanMacAddress });
-    }
-
-    // If no valid conditions, return null
-    if (whereConditions.length === 0) {
-      this.logger.warn('No valid conditions to search for device');
-      return null;
-    }
-
-    // Find the device with the given device UID or mac_address
-    let existingDevice = await this.devicesRepository.findOne({
-      where: whereConditions,
-    });
-
-    if (!existingDevice) {
-      this.logger.warn(`No device found with provided conditions`);
-      return null;
-    }
-
-    // Track if updates are needed
-    let needsUpdate = false;
-
-    // Update mac_address if device found by device_id but no mac_address
-    if (existingDevice && !existingDevice.mac_address && cleanMacAddress) {
-      // Check if another device already has this mac_address
-      const conflictingDevice = await this.devicesRepository.findOne({
+      // Search by mac_address
+      const isExist = await this.devicesRepository.findOne({
         where: { mac_address: cleanMacAddress },
       });
 
-      // Remove conflicting mac_address if found
-      if (conflictingDevice && conflictingDevice.device_uid !== existingDevice.device_uid) {
-        this.logger.warn(`Removing conflicting mac_address from device: ${conflictingDevice.device_uid}`);
-        conflictingDevice.mac_address = null;
-        await this.devicesRepository.save(conflictingDevice);
+      this.logger.debug(
+        `Checking device - mac_address: ${cleanMacAddress}, device_user_name: ${device_user_name}`,
+      );
+      this.logger.debug(`Found device: ${JSON.stringify(isExist)}`);
+
+      // Verify both mac_address and device_name match
+      if (
+        isExist &&
+        isExist.device_name &&
+        isExist.device_name.toLowerCase() === cleanDeviceUserName
+      ) {
+        this.logger.log(
+          `Device found with matching mac_address and device_name: ${isExist.device_uid}`,
+        );
+        return isExist.device_uid;
       }
 
-      existingDevice.mac_address = cleanMacAddress;
-      needsUpdate = true;
-      this.logger.log(`Updating mac_address for device: ${existingDevice.device_uid}`);
-    }
-
-    // Update device_name if provided and different
-    if (cleanDeviceUserName && existingDevice.device_name !== cleanDeviceUserName) {
-      existingDevice.device_name = cleanDeviceUserName;
-      needsUpdate = true;
-      this.logger.log(`Updating device_name to: ${cleanDeviceUserName} for device: ${existingDevice.device_uid}`);
-    }
-
-    // Save updates if any
-    if (needsUpdate) {
-      await this.devicesRepository.save(existingDevice);
-      this.logger.log(`Device updated successfully: ${existingDevice.device_uid}`);
-    }
-
-    return existingDevice ? existingDevice.device_uid : null;
-  } catch (error) {
-    this.logger.error(`Error checking device ID: ${error.message}`, error.stack);
-    throw error;
-  }
-}
-
-async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
-  try {
-    this.logger.debug(
-      `Fetching user config for device: ${deviceId}, organization: ${organizationId}`,
-    );
-
-    // Validate that deviceId and organizationId are not null or empty
-    if (!deviceId || !organizationId) {
+      this.logger.warn('Device not found or device_name mismatch');
+      return null;
+    } catch (err) {
       this.logger.error(
-        `Invalid input: deviceId or organizationId is missing.`,
-      );
-      throw new Error(
-        'Invalid input: deviceId or organizationId is missing.',
-      );
-    }
-
-    // Fetch the user config from the database
-    let userConfig = await this.devicesRepository.findOne({
-      where: { device_uid: deviceId, organization_uid: organizationId },
-    });
-
-    this.logger.log(`device_config: ${JSON.stringify(userConfig)}`);
-    
-    if (!userConfig) {
-      this.logger.warn(
-        `User config not found for device ${deviceId} and organization ${organizationId}`,
+        `Error in checkDeviceIdExist: ${err?.message}`,
+        err?.stack,
       );
       return null;
     }
+  }
 
-    // Check if the config is null and update it with default value if necessary
-    if (!userConfig.config) {
-      this.logger.log(
-        `User config is null. Setting default config for device: ${deviceId}`,
+  async checkDeviceIdExistWithDeviceId(
+    mac_address: string,
+    device_id: string,
+    device_user_name: string,
+  ): Promise<string> {
+    try {
+      // Clean the input parameters
+      const cleanMacAddress =
+        mac_address && mac_address.trim() !== '' ? mac_address : null;
+      const cleanDeviceId =
+        device_id && device_id.trim() !== '' ? device_id : null;
+      const cleanDeviceUserName =
+        device_user_name && device_user_name.trim() !== ''
+          ? device_user_name.trim()
+          : null;
+
+      // Build the where conditions dynamically
+      const whereConditions: any[] = [];
+
+      if (cleanDeviceId) {
+        whereConditions.push({ device_uid: cleanDeviceId });
+      }
+
+      if (cleanMacAddress) {
+        whereConditions.push({ mac_address: cleanMacAddress });
+      }
+
+      // If no valid conditions, return null
+      if (whereConditions.length === 0) {
+        this.logger.warn('No valid conditions to search for device');
+        return null;
+      }
+
+      // Find the device with the given device UID or mac_address
+      let existingDevice = await this.devicesRepository.findOne({
+        where: whereConditions,
+      });
+
+      if (!existingDevice) {
+        this.logger.warn(`No device found with provided conditions`);
+        return null;
+      }
+
+      // Track if updates are needed
+      let needsUpdate = false;
+
+      // Update mac_address if device found by device_id but no mac_address
+      if (existingDevice && !existingDevice.mac_address && cleanMacAddress) {
+        // Check if another device already has this mac_address
+        const conflictingDevice = await this.devicesRepository.findOne({
+          where: { mac_address: cleanMacAddress },
+        });
+
+        // Remove conflicting mac_address if found
+        if (
+          conflictingDevice &&
+          conflictingDevice.device_uid !== existingDevice.device_uid
+        ) {
+          this.logger.warn(
+            `Removing conflicting mac_address from device: ${conflictingDevice.device_uid}`,
+          );
+          conflictingDevice.mac_address = null;
+          await this.devicesRepository.save(conflictingDevice);
+        }
+
+        existingDevice.mac_address = cleanMacAddress;
+        needsUpdate = true;
+        this.logger.log(
+          `Updating mac_address for device: ${existingDevice.device_uid}`,
+        );
+      }
+
+      // Update device_name if provided and different
+      if (
+        cleanDeviceUserName &&
+        existingDevice.device_name !== cleanDeviceUserName
+      ) {
+        existingDevice.device_name = cleanDeviceUserName;
+        needsUpdate = true;
+        this.logger.log(
+          `Updating device_name to: ${cleanDeviceUserName} for device: ${existingDevice.device_uid}`,
+        );
+      }
+
+      // Save updates if any
+      if (needsUpdate) {
+        await this.devicesRepository.save(existingDevice);
+        this.logger.log(
+          `Device updated successfully: ${existingDevice.device_uid}`,
+        );
+      }
+
+      return existingDevice ? existingDevice.device_uid : null;
+    } catch (error) {
+      this.logger.error(
+        `Error checking device ID: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
+    try {
+      this.logger.debug(
+        `Fetching user config for device: ${deviceId}, organization: ${organizationId}`,
       );
 
-      userConfig.config = { trackTimeStatus: TrackTimeStatus.Resume };
-      await this.devicesRepository.save(userConfig);
-    }
+      // Validate that deviceId and organizationId are not null or empty
+      if (!deviceId || !organizationId) {
+        this.logger.error(
+          `Invalid input: deviceId or organizationId is missing.`,
+        );
+        throw new Error(
+          'Invalid input: deviceId or organizationId is missing.',
+        );
+      }
 
-    return userConfig;
-  } catch (error) {
-    this.logger.error(
-      `Failed to fetch or update user config: ${error.message}`,
-      error.stack,
-    );
-    throw new Error(
-      `Failed to fetch or update user config: ${error.message}`,
-    );
+      // Fetch the user config from the database
+      let userConfig = await this.devicesRepository.findOne({
+        where: { device_uid: deviceId, organization_uid: organizationId },
+      });
+
+      this.logger.log(`device_config: ${JSON.stringify(userConfig)}`);
+
+      if (!userConfig) {
+        this.logger.warn(
+          `User config not found for device ${deviceId} and organization ${organizationId}`,
+        );
+        return null;
+      }
+
+      // Check if the config is null and update it with default value if necessary
+      if (!userConfig.config) {
+        this.logger.log(
+          `User config is null. Setting default config for device: ${deviceId}`,
+        );
+
+        userConfig.config = { trackTimeStatus: TrackTimeStatus.Resume };
+        await this.devicesRepository.save(userConfig);
+      }
+
+      return userConfig;
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch or update user config: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(
+        `Failed to fetch or update user config: ${error.message}`,
+      );
+    }
   }
-}
   async findDesktopApplication(orgId: string): Promise<any> {
     try {
       let desktopApp = await this.desktopAppRepository.findOne({
@@ -3123,15 +3276,15 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
     try {
       // If organizationId is provided, check for user with same email within the same organization
       if (organizationId) {
-        let user = await this.userRepository.findOne({ 
-          where: { 
+        let user = await this.userRepository.findOne({
+          where: {
             email: email,
-            organizationId: organizationId 
-          } 
+            organizationId: organizationId,
+          },
         });
         return user;
       }
-      
+
       // Fallback to original logic - check globally (for backward compatibility)
       let user = await this.userRepository.findOne({ where: { email: email } });
       return user;
@@ -3952,10 +4105,10 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
       relations: ['policy'],
     });
     // let newScreenshotSetings = await
-    (screenshotSeetings.blurScreenshotsStatus = blurScreenshotsStatus),
+    ((screenshotSeetings.blurScreenshotsStatus = blurScreenshotsStatus),
       (screenshotSeetings.time_interval = time_interval),
       (screenshotSeetings.monitoringStatus = screenshot_monitoring),
-      await this.ScreenshotSetRepository.save(screenshotSeetings);
+      await this.ScreenshotSetRepository.save(screenshotSeetings));
 
     console.log('screenshotSeetings', screenshotSeetings);
     console.log('policy', policy);
@@ -4040,7 +4193,7 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
       // If no policy is found, return the default interval (e.g., 2)
       return true;
     }
- 
+
     // Fetch the policy details, specifically the screenshot interval
     const screenshotInterval = await this.ScreenshotSetRepository.findOne({
       where: { policy: { policyId: policyUser?.policy?.policyId } },
@@ -4054,48 +4207,58 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
   async findFilteredDevices(organizationId: string): Promise<Devices[]> {
     try {
       console.log('Finding filtered devices for organization:', organizationId);
-      
+
       // Get all devices for the organization
       const devices = await this.devicesRepository.find({
         where: { organization_uid: organizationId },
         order: { created_at: 'DESC' },
       });
 
-      console.log(`Found ${devices.length} total devices for organization ${organizationId}`);
+      console.log(
+        `Found ${devices.length} total devices for organization ${organizationId}`,
+      );
 
       // Filter devices based on criteria:
       // 1. Devices with user_uid (not null)
       // 2. Devices with activity/tracking data
       const filteredDevices = [];
-      
+
       for (const device of devices) {
         let shouldInclude = false;
-        
+
         // Check if device has user_uid
         if (device.user_uid && device.user_uid.trim() !== '') {
           shouldInclude = true;
-          console.log(`Device ${device.device_uid} included - has user_uid: ${device.user_uid}`);
+          console.log(
+            `Device ${device.device_uid} included - has user_uid: ${device.user_uid}`,
+          );
         } else {
           // Check if device has activity/tracking data
           // Activities are linked to devices via user_uid = device_uid
           const activityCount = await this.userActivityRepository.count({
-            where: { user_uid: device.device_uid }
+            where: { user_uid: device.device_uid },
           });
-          
+
           if (activityCount > 0) {
             shouldInclude = true;
-            console.log(`Device ${device.device_uid} included - has ${activityCount} activity records`);
+            console.log(
+              `Device ${device.device_uid} included - has ${activityCount} activity records`,
+            );
           } else {
-            console.log(`Device ${device.device_uid} excluded - no user_uid and no activity data`);
+            console.log(
+              `Device ${device.device_uid} excluded - no user_uid and no activity data`,
+            );
           }
         }
-        
+
         if (shouldInclude) {
           filteredDevices.push(device);
         }
       }
 
-      console.log(`Filtered to ${filteredDevices.length} devices for organization ${organizationId}`);
+      console.log(
+        `Filtered to ${filteredDevices.length} devices for organization ${organizationId}`,
+      );
       return filteredDevices;
     } catch (error) {
       console.error('Error in findFilteredDevices:', error);
@@ -4106,14 +4269,16 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
   async getUsersForDownload(organization: string): Promise<User[]> {
     try {
       console.log('Getting users for download for organization:', organization);
-      
+
       const users = await this.userRepository.find({
         where: { organizationId: organization },
         order: { created_at: 'DESC' },
         relations: ['team'],
       });
 
-      console.log(`Found ${users.length} users for download for organization ${organization}`);
+      console.log(
+        `Found ${users.length} users for download for organization ${organization}`,
+      );
       return users;
     } catch (error) {
       console.error('Error in getUsersForDownload:', error);
@@ -4123,12 +4288,17 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
 
   async findUserByUuid(userUuid: string, organization: string): Promise<User> {
     try {
-      console.log('Finding user by UUID:', userUuid, 'for organization:', organization);
-      
+      console.log(
+        'Finding user by UUID:',
+        userUuid,
+        'for organization:',
+        organization,
+      );
+
       const user = await this.userRepository.findOne({
-        where: { 
+        where: {
           userUUID: userUuid,
-          organizationId: organization 
+          organizationId: organization,
         },
         relations: ['team'],
       });
@@ -4143,12 +4313,17 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
 
   async findUserByEmail(email: string, organization: string): Promise<User> {
     try {
-      console.log('Finding user by email:', email, 'for organization:', organization);
-      
+      console.log(
+        'Finding user by email:',
+        email,
+        'for organization:',
+        organization,
+      );
+
       const user = await this.userRepository.findOne({
-        where: { 
+        where: {
           email: email,
-          organizationId: organization 
+          organizationId: organization,
         },
         relations: ['team'],
       });
@@ -4161,19 +4336,30 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
     }
   }
 
-  async findDeviceByUserId(userId: string, organization: string): Promise<Devices> {
+  async findDeviceByUserId(
+    userId: string,
+    organization: string,
+  ): Promise<Devices> {
     try {
-      console.log('Finding device by user ID:', userId, 'for organization:', organization);
-      
+      console.log(
+        'Finding device by user ID:',
+        userId,
+        'for organization:',
+        organization,
+      );
+
       const device = await this.devicesRepository.findOne({
-        where: { 
+        where: {
           user_uid: userId,
-          organization_uid: organization 
+          organization_uid: organization,
         },
         order: { created_at: 'DESC' },
       });
 
-      console.log('Device find by user ID result:', device ? 'Found' : 'Not found');
+      console.log(
+        'Device find by user ID result:',
+        device ? 'Found' : 'Not found',
+      );
       return device;
     } catch (error) {
       console.error('Error in findDeviceByUserId:', error);
@@ -4189,19 +4375,19 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
   }): Promise<User> {
     try {
       console.log('Creating new user:', userData);
-      
+
       const newUser = this.userRepository.create({
         userName: userData.user_name,
         email: userData.email,
         organizationId: userData.organizationId,
         config: {
-          trackTimeStatus: userData.trackTimeStatus
-        }
+          trackTimeStatus: userData.trackTimeStatus,
+        },
       });
 
       const savedUser = await this.userRepository.save(newUser);
       console.log('User created successfully:', savedUser.userUUID);
-      
+
       return savedUser;
     } catch (error) {
       console.error('Error in createUser:', error);
@@ -4219,19 +4405,19 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
   }): Promise<Devices> {
     try {
       console.log('Creating new device:', deviceData);
-      
+
       const newDevice = this.devicesRepository.create({
         device_name: deviceData.device_name,
         organization_uid: deviceData.organization_uid,
         user_name: deviceData.user_name,
         user_uid: deviceData.user_uid || null,
         mac_address: deviceData.mac_address || null,
-        config: deviceData.config || null
+        config: deviceData.config || null,
       });
 
       const savedDevice = await this.devicesRepository.save(newDevice);
       console.log('Device created successfully:', savedDevice.device_uid);
-      
+
       return savedDevice;
     } catch (error) {
       console.error('Error in createDevice:', error);
@@ -4239,4 +4425,3 @@ async getUserConfig(deviceId: string, organizationId: string): Promise<any> {
     }
   }
 }
- 

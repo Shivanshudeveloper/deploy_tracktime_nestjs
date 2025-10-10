@@ -2355,8 +2355,8 @@ export class OnboardingController {
       // Prepare configuration values (matching Rust app format - 7 fields only)
       const configValues = {
         HOST_FOR_NEST:
-          'https://deploy-tracktime-nestjs-56r0.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-lq7y.onrender.com/produce',
+          'https://deploy-tracktime-nestjs-1ft3.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-z8vs.onrender.com/produce',
         device_id: deviceId,
         timeForUnpaidUser: userConfig?.timeForUnpaidUser || '2', // Default 2 seconds for paid users, can be updated by policy
         organizationId: organizationId,
@@ -2840,8 +2840,8 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
 
       const configValues = {
         HOST_FOR_NEST:
-          'https://deploy-tracktime-nestjs-56r0.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-lq7y.onrender.com/produce',
+          'https://deploy-tracktime-nestjs-1ft3.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-z8vs.onrender.com/produce',
         device_id: deviceId,
         timeForUnpaidUser: '2', // Default 2 seconds, can be updated by policy
         organizationId: orgId,
