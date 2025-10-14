@@ -2690,6 +2690,7 @@ ${sanitizedOrgName} Team
     userActivities: UserActivity[],
     from: string,
     organizationId: string,
+    organizationTimezone: string = 'UTC',
   ) {
     // Fetch all devices associated with the organization
     const devices = await this.devicesRepository.find({
@@ -2709,8 +2710,8 @@ ${sanitizedOrgName} Team
     // Group activities by user/device
     const groupedByUser = this.groupByUser(filteredActivities);
 
-    // Process daily, weekly, and monthly data with devices list
-    const daily = this.calculateDaily(groupedByUser, devices);
+    // Process daily, weekly, and monthly data with devices list and timezone
+    const daily = this.calculateDaily(groupedByUser, devices, organizationTimezone);
     const weekly = this.calculateWeekly(groupedByUser, targetDate, devices);
     const monthly = this.calculateMonthly(groupedByUser, targetDate, devices);
 
@@ -2720,6 +2721,7 @@ ${sanitizedOrgName} Team
   private calculateDaily(
     groupedActivities: Record<string, UserActivity[]>,
     devices: Devices[],
+    organizationTimezone: string = 'UTC',
   ) {
     return devices.map(({ device_uid, device_name, user_name }) => {
       const activities = groupedActivities[device_uid] || [];
@@ -2745,8 +2747,8 @@ ${sanitizedOrgName} Team
       return {
         id: device_uid,
         name: user_name || device_name,
-        InTime: this.formatTime(inTime),
-        OutTime: this.formatTime(outTime),
+        InTime: this.formatTime(inTime, organizationTimezone),
+        OutTime: this.formatTime(outTime, organizationTimezone),
         WorkHour: this.calculateDuration(inTime, outTime),
       };
     });
@@ -2873,9 +2875,35 @@ ${sanitizedOrgName} Team
     );
   }
 
-  private formatTime(timestamp: Date): string {
-    const date = new Date(timestamp);
-    return date.toTimeString().split(' ')[0].slice(0, 5); // HH:mm format
+  private formatTime(timestamp: Date, organizationTimezone: string = 'UTC'): string {
+    try {
+      const date = new Date(timestamp);
+      
+      // Timezone mapping to IANA format
+      const timezoneMapping = {
+        PST: 'America/Los_Angeles',
+        EST: 'America/New_York',
+        CST: 'America/Chicago',
+        IST: 'Asia/Kolkata',
+        GMT: 'Europe/London',
+      };
+      
+      const ianaTimezone = timezoneMapping[organizationTimezone] || 'UTC';
+      
+      // Format time in HH:mm format according to organization timezone
+      const options: Intl.DateTimeFormatOptions = {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false, // 24-hour format for timesheet
+        timeZone: ianaTimezone,
+      };
+      
+      return new Intl.DateTimeFormat('en-US', options).format(date);
+    } catch (error) {
+      // Fallback to original format if error
+      const date = new Date(timestamp);
+      return date.toTimeString().split(' ')[0].slice(0, 5);
+    }
   }
 
   private calculateDuration(start: Date, end: Date): string {

@@ -62,6 +62,16 @@ import { NotificationService } from '../notifications/notification.service';
 @Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name);
+  
+  // Timezone mapping for proper conversion
+  private readonly timezoneMapping = {
+    PST: 'America/Los_Angeles',
+    EST: 'America/New_York',
+    CST: 'America/Chicago',
+    IST: 'Asia/Kolkata',
+    GMT: 'Europe/London',
+  };
+
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly userService: AuthService,
@@ -72,6 +82,66 @@ export class OnboardingController {
     private readonly buildStatusService: BuildStatusService,
     private readonly notificationService: NotificationService,
   ) {}
+
+  /**
+   * Format timestamp based on organization's timezone
+   * @param timestamp - Original timestamp
+   * @param organizationTimezone - Organization's timezone (PST, EST, CST, IST, GMT)
+   * @returns Formatted timestamp string (without timezone abbreviation)
+   */
+  private formatTimestampForOrganization(
+    timestamp: Date | string,
+    organizationTimezone: string,
+  ): string {
+    if (!timestamp) return '';
+    
+    try {
+      const date = new Date(timestamp);
+      
+      // Get the IANA timezone identifier
+      const ianaTimezone = this.timezoneMapping[organizationTimezone] || 'UTC';
+      
+      // Format options for readable date-time (WITHOUT timezone name for cleaner display)
+      const options: Intl.DateTimeFormatOptions = {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        timeZone: ianaTimezone,
+        hour12: true, // Ensure 12-hour format with AM/PM
+      };
+      
+      return date.toLocaleString('en-US', options);
+    } catch (error) {
+      this.logger.error(`Error formatting timestamp: ${error.message}`);
+      return timestamp?.toString() || '';
+    }
+  }
+
+  /**
+   * Add formatted timestamps to activity data based on organization timezone
+   * @param activities - Array of activity objects with timestamps
+   * @param organizationTimezone - Organization's timezone setting
+   * @returns Activities with both original and formatted timestamps
+   */
+  private addFormattedTimestamps(
+    activities: any[],
+    organizationTimezone: string,
+  ): any[] {
+    return activities.map((activity) => ({
+      ...activity,
+      timestamp: activity.timestamp, // Original timestamp (for verification)
+      formattedTimestamp: activity.timestamp
+        ? this.formatTimestampForOrganization(
+            activity.timestamp,
+            organizationTimezone,
+          )
+        : null, // Formatted based on org timezone
+      organizationTimezone: organizationTimezone, // Include timezone info
+    }));
+  }
 
   @Post('organization/register')
   async createOrganization(
@@ -655,12 +725,15 @@ export class OnboardingController {
       }
 
       // Fetch all necessary data in parallel for better performance
-      const [images, userData, devices, users] = await Promise.all([
+      const [images, userData, devices, users, organization] = await Promise.all([
         this.onboardingService.fetchScreenShot(),
         this.onboardingService.getAllUserActivityData(OrganizationId),
         this.onboardingService.findAllDevices(OrganizationId),
         this.onboardingService.getAllusers(OrganizationId), // Get users for user_name mapping
+        this.onboardingService.getOrganizationDetails(OrganizationId), // Get organization details for timezone
       ]);
+
+      const organizationTimezone = organization?.timeZone || 'UTC';
 
       // Create lookup maps for O(1) access instead of nested loops
       const imageMap = new Map();
@@ -689,6 +762,10 @@ export class OnboardingController {
           // Only include activities that have screenshots
           if (!image) return null;
 
+          // Use ImgData.lastModified as the primary timestamp source (more accurate)
+          // as it reflects the actual time the screenshot was saved to Wasabi
+          const primaryTimestamp = image.lastModified || activity.timestamp;
+
           return {
             activity_uuid: activity.activity_uuid,
             user_uid: activity.user_uid,
@@ -698,11 +775,18 @@ export class OnboardingController {
             title: activity.page_title || activity.url || 'No Title',
             url: activity.url,
             productivity_status: activity.productivity_status,
-            timestamp: activity.timestamp,
+            timestamp: activity.timestamp, // Original activity timestamp for verification
+            formattedTimestamp: primaryTimestamp
+              ? this.formatTimestampForOrganization(
+                  primaryTimestamp,
+                  organizationTimezone,
+                )
+              : null, // Formatted based on organization timezone using accurate timestamp
+            organizationTimezone: organizationTimezone,
             ImgData: {
               url: image.url,
               key: image.key,
-              lastModified: image.lastModified,
+              lastModified: image.lastModified, // This is the accurate timestamp
               size: image.size,
             },
           };
@@ -710,7 +794,7 @@ export class OnboardingController {
         .filter((item) => item !== null); // Remove activities without screenshots
 
       this.logger.log(
-        `Returning ${finalData.length} screenshots for organization ${OrganizationId}`,
+        `Returning ${finalData.length} screenshots for organization ${OrganizationId} (Timezone: ${organizationTimezone})`,
       );
       
       res.status(200).json(finalData);
@@ -749,6 +833,12 @@ export class OnboardingController {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
 
+      // Get organization timezone
+      const organization = await this.onboardingService.getOrganizationDetails(
+        OrganizationId,
+      );
+      const organizationTimezone = organization?.timeZone || 'UTC';
+
       let fromDate: Date;
       let toDate: Date;
 
@@ -769,7 +859,11 @@ export class OnboardingController {
         fromDate,
         toDate,
       );
-      return res.status(200).json(attendanceData);
+
+      return res.status(200).json({
+        attendanceData,
+        organizationTimezone,
+      });
     } catch (error) {
       return res
         .status(500)
@@ -1296,6 +1390,13 @@ export class OnboardingController {
       if (!OrganizationId) {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
+
+      // Fetch organization details to get timezone
+      const organization = await this.onboardingService.getOrganizationDetails(
+        OrganizationId,
+      );
+      const organizationTimezone = organization?.timeZone || 'UTC';
+
       const user = await this.onboardingService.getUserActivityDetails(
         OrganizationId,
         id,
@@ -1303,11 +1404,21 @@ export class OnboardingController {
         Limit,
       );
       const userDetails = await this.onboardingService.getUserDeviceId(id);
-      // console.log("userDetails", userDetails);
       const dataCount = await this.onboardingService.getUserDataCount(id);
       console.log(user.length, dataCount);
 
-      return res.status(200).json({ user, dataCount, userDetails });
+      // Add formatted timestamps to user activity data
+      const userWithFormattedTimestamps = this.addFormattedTimestamps(
+        user,
+        organizationTimezone,
+      );
+
+      return res.status(200).json({
+        user: userWithFormattedTimestamps,
+        dataCount,
+        userDetails,
+        organizationTimezone,
+      });
     } catch (error) {
       if (error.message === 'User not found') {
         return res.status(404).json({ message: error.message });
@@ -1395,6 +1506,12 @@ export class OnboardingController {
         return res.status(404).json({ error: 'Organization not found!' });
       }
 
+      // Get organization timezone
+      const organization = await this.onboardingService.getOrganizationDetails(
+        OrganizationId,
+      );
+      const organizationTimezone = organization?.timeZone || 'UTC';
+
       // Get timesheet data for the specified date
       const userActivityData =
         await this.onboardingService.getAllUserActivityData(OrganizationId);
@@ -1403,6 +1520,7 @@ export class OnboardingController {
         userActivityData,
         exportData.date,
         OrganizationId,
+        organizationTimezone, // Pass timezone to service
       );
 
       // Filter data based on selected users
@@ -1803,6 +1921,13 @@ export class OnboardingController {
       if (!OrganizationId) {
         return res.status(404).json({ error: 'Organization not found !!' });
       }
+
+      // Get organization timezone
+      const organization = await this.onboardingService.getOrganizationDetails(
+        OrganizationId,
+      );
+      const organizationTimezone = organization?.timeZone || 'UTC';
+
       // step2: gather the data of the userActivity of the organization later on we all separe them with user.
       const userActivityData =
         await this.onboardingService.getAllUserActivityData(OrganizationId);
@@ -1812,9 +1937,13 @@ export class OnboardingController {
         userActivityData,
         fromTime,
         OrganizationId,
+        organizationTimezone, // Pass timezone to service
       );
 
-      return res.status(200).json({ timeSheetData });
+      return res.status(200).json({
+        timeSheetData,
+        organizationTimezone,
+      });
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to fetch user details',
@@ -2581,6 +2710,12 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
         return res.status(404).json({ error: 'Organization not found !!' });
       }
 
+      // Get organization timezone
+      const organization = await this.onboardingService.getOrganizationDetails(
+        OrganizationId,
+      );
+      const organizationTimezone = organization?.timeZone || 'UTC';
+
       const date = req.query.date as string;
       const dateString = Array.isArray(date)
         ? date[0]
@@ -2590,7 +2725,11 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
         OrganizationId,
         dateString,
       );
-      return res.status(200).json(data);
+
+      return res.status(200).json({
+        data,
+        organizationTimezone,
+      });
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to fetch productivity data',
