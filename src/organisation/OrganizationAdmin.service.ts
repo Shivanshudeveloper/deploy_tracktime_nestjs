@@ -15,6 +15,7 @@ import * as crypto from 'crypto';
 import { Resend } from 'resend';
 import { OnboardingService } from './onboarding.service';
 import { JwtService } from '@nestjs/jwt';
+import { WasabiUploadService } from './wasabi-upload.service';
 
 @Injectable()
 export class organizationAdminService {
@@ -30,6 +31,7 @@ export class organizationAdminService {
     @Inject(forwardRef(() => OnboardingService))
     private onboardingService: OnboardingService,
     private jwtService: JwtService,
+    private wasabiUploadService: WasabiUploadService,
   ) {}
 
   async updateAdminAvatar(
@@ -265,7 +267,8 @@ export class organizationAdminService {
         lastName: admin.lastName || this.extractLastName(admin.name),
         email: admin.email,
         role: admin.role || (admin.isAdmin ? 'Admin' : 'User'),
-        avatar: admin.avatar || null,
+        avatar: admin.avatar || null, // This will be the object key
+        avatarUrl: null, // Will be populated with signed URL if avatar exists
         joinedDate: admin.createdAt.toISOString().split('T')[0],
         lastUpdated: admin.updatedAt.toISOString().split('T')[0],
         password: admin.password || '••••••••••••', // Never send actual password
@@ -279,6 +282,7 @@ export class organizationAdminService {
             teamSize: organization.teamSize || '',
             country: organization.country || '',
             logo: organization.logo || '',
+            logoUrl: null, // Will be populated with signed URL if logo exists
             teams: formattedTeams,
             timeZone: organization.timeZone || '',
             applicationName: desktopApp?.name || 'TrackTime',
@@ -289,10 +293,39 @@ export class organizationAdminService {
             teamSize: '',
             country: '',
             logo: '',
+            logoUrl: null,
             teams: [],
             timeZone: '',
             applicationName: 'TrackTime',
           };
+
+      // Generate signed URL for avatar if it exists
+      if (admin.avatar) {
+        try {
+          const avatarSignedUrl = await this.wasabiUploadService.getProfileLogoSignedUrl(
+            admin.avatar,
+            86400 // 24 hours expiration
+          );
+          personalInfo.avatarUrl = avatarSignedUrl;
+        } catch (error) {
+          console.warn(`⚠️ Failed to generate signed URL for avatar: ${error.message}`);
+          // Continue without signed URL - frontend can use fallback
+        }
+      }
+
+      // Generate signed URL for organization logo if it exists
+      if (organization && organization.logo) {
+        try {
+          const logoSignedUrl = await this.wasabiUploadService.getOrganizationLogoSignedUrl(
+            organization.logo,
+            86400 // 24 hours expiration
+          );
+          companyInfo.logoUrl = logoSignedUrl;
+        } catch (error) {
+          console.warn(`⚠️ Failed to generate signed URL for organization logo: ${error.message}`);
+          // Continue without signed URL - frontend can use fallback
+        }
+      }
 
       // Mock subscription info (implement actual subscription logic later)
       const subscriptionInfo = {

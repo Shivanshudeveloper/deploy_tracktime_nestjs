@@ -460,11 +460,11 @@ export class OnboardingController {
     @Res() res: Response,
   ): Promise<any> {
     try {
-      // Get the object key from database
-      const adminProfile =
-        await this.organizationAdminService.getAdminProfileData(adminId);
+      // Get the admin basic info instead of full profile data
+      const admin =
+        await this.organizationAdminService.getAdminBasicInfo(adminId);
 
-      if (!adminProfile || !adminProfile.avatar) {
+      if (!admin || !admin.avatar) {
         return res.status(404).json({
           message: 'Profile logo not found',
           success: false,
@@ -473,14 +473,14 @@ export class OnboardingController {
 
       // Generate signed URL
       const signedUrl = await this.wasabiUploadService.getProfileLogoSignedUrl(
-        adminProfile.avatar,
+        admin.avatar,
       );
 
       return res.status(200).json({
         message: 'Profile logo signed URL generated successfully',
         success: true,
         signedUrl,
-        objectKey: adminProfile.avatar,
+        objectKey: admin.avatar,
       });
     } catch (error) {
       this.logger.error(
@@ -3598,7 +3598,23 @@ Note: The dev_config.txt contains your organization configuration and will be us
       }
       const organization =
         await this.onboardingService.getOrganizationDetails(OrganizationId);
-      return res.status(200).json(organization);
+      
+      // Generate signed URL for logo if it exists
+      let organizationResponse: any = organization;
+      if (organization && organization.logo) {
+        try {
+          const signedUrl = await this.wasabiUploadService.getOrganizationLogoSignedUrl(
+            organization.logo,
+            86400 // 24 hours expiration
+          );
+          organizationResponse = { ...organization, logoUrl: signedUrl }; // Add signed URL to response
+        } catch (error) {
+          this.logger.warn(`⚠️ Failed to generate signed URL for organization logo: ${error.message}`);
+          // Continue without signed URL - frontend can use fallback
+        }
+      }
+      
+      return res.status(200).json(organizationResponse);
     } catch (error) {
       return res.status(500).json({
         message: 'Failed to fetch organization data',
