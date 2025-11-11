@@ -1,7 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BuildStatus } from './build-status.entity';
+
+export interface PublishReleaseInput {
+  os: string;
+  version: string;
+  downloadUrl?: string;
+  releaseNotes?: string;
+  isMandatory?: boolean;
+  metadata?: Record<string, any>;
+}
 
 @Injectable()
 export class BuildStatusService {
@@ -9,203 +18,71 @@ export class BuildStatusService {
 
   constructor(
     @InjectRepository(BuildStatus)
-    private buildStatusRepository: Repository<BuildStatus>,
+    private readonly buildStatusRepository: Repository<BuildStatus>,
   ) {}
 
-  async createBuildRequest(userId: string, organizationId: string, os: string, userType: string) {
-    const buildStatus = this.buildStatusRepository.create({
-      buildId: this.generateBuildId(),
-      userId,
-      organizationId,
-      os,
-      userType,
-      status: 'pending',
-      progressPercentage: 0,
-      currentStep: 'Build Initiated',
-      progressSteps: {
-        steps: [
-          { id: 1, name: 'Build Initiated', status: 'completed', timestamp: new Date() },
-          { id: 2, name: 'Compilation Started', status: 'pending' },
-          { id: 3, name: 'Compilation Completed', status: 'pending' },
-          { id: 4, name: 'Creating Installer', status: 'pending' },
-          { id: 5, name: 'Installer Ready', status: 'pending' }
-        ]
-      }
-    });
-
-    return await this.buildStatusRepository.save(buildStatus);
-  }
-
-  async updateBuildStatus(buildId: string, status: string, githubData?: any, progressPercentage?: number, currentStep?: string) {
-    const build = await this.buildStatusRepository.findOne({ where: { buildId } });
-    if (build) {
-      build.status = status;
-      if (githubData) {
-        build.githubWorkflowId = githubData.id;
-        build.githubRunId = githubData.run_id;
-      }
-      if (progressPercentage !== undefined) {
-        build.progressPercentage = progressPercentage;
-      }
-      if (currentStep) {
-        build.currentStep = currentStep;
-      }
-      
-      // Update progress steps based on status
-      if (build.progressSteps && build.progressSteps.steps) {
-        const steps = build.progressSteps.steps;
-        
-        switch (status) {
-          case 'building':
-            if (progressPercentage >= 20 && steps[1].status === 'pending') {
-              steps[1].status = 'completed';
-              steps[1].timestamp = new Date();
-            }
-            if (progressPercentage >= 60 && steps[2].status === 'pending') {
-              steps[2].status = 'completed';
-              steps[2].timestamp = new Date();
-            }
-            if (progressPercentage >= 80 && steps[3].status === 'pending') {
-              steps[3].status = 'completed';
-              steps[3].timestamp = new Date();
-            }
-            break;
-          case 'completed':
-            steps[4].status = 'completed';
-            steps[4].timestamp = new Date();
-            build.progressPercentage = 100;
-            break;
-          case 'failed':
-            // Mark current step as failed
-            const currentStepIndex = steps.findIndex(step => step.status === 'pending');
-            if (currentStepIndex >= 0) {
-              steps[currentStepIndex].status = 'failed';
-              steps[currentStepIndex].timestamp = new Date();
-            }
-            break;
-        }
-        
-        build.progressSteps = { steps };
-      }
-      
-      await this.buildStatusRepository.save(build);
-      this.logger.log(`Build ${buildId} status updated to: ${status} (${progressPercentage}%)`);
-      
-      return build;
-    }
-    return null;
-  }
-
-  async updateBuildProgress(buildId: string, step: string, status: string, downloadUrl?: string) {
-    const build = await this.buildStatusRepository.findOne({ where: { buildId } });
-    if (build) {
-      build.currentStep = step;
-      
-      // Update progress percentage based on step
-      switch (step) {
-        case 'compilation_started':
-          build.progressPercentage = 20;
-          break;
-        case 'compilation_completed':
-          build.progressPercentage = 60;
-          break;
-        case 'creating_installer':
-          build.progressPercentage = 80;
-          break;
-        case 'installer_ready':
-          build.progressPercentage = 100;
-          build.status = 'completed';
-          if (downloadUrl) {
-            build.downloadUrl = downloadUrl;
-          }
-          break;
-      }
-      
-      await this.buildStatusRepository.save(build);
-      this.logger.log(`Build ${buildId} progress updated: ${step} (${build.progressPercentage}%)`);
-      
-      return build;
-    }
-    return null;
-  }
-
-  async getBuildStatus(buildId: string): Promise<BuildStatus | null> {
-    return await this.buildStatusRepository.findOne({ where: { buildId } });
-  }
-
-  async findBuildByWorkflowId(workflowId: string): Promise<BuildStatus | null> {
-    return await this.buildStatusRepository.findOne({ where: { githubWorkflowId: workflowId } });
-  }
-
-  async findBuildByRunId(runId: string): Promise<BuildStatus | null> {
-    return await this.buildStatusRepository.findOne({ where: { githubRunId: runId } });
-  }
-
-  async setBuildError(buildId: string, errorMessage: string) {
-    const build = await this.buildStatusRepository.findOne({ where: { buildId } });
-    if (build) {
-      build.status = 'failed';
-      build.errorMessage = errorMessage;
-      await this.buildStatusRepository.save(build);
-      this.logger.error(`Build ${buildId} failed: ${errorMessage}`);
-    }
-  }
-
-  private generateBuildId(): string {
-    return `build_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  // Version management methods
   async getLatestVersion(os: string): Promise<BuildStatus | null> {
-    return await this.buildStatusRepository.findOne({
+    return this.buildStatusRepository.findOne({
       where: {
-        os,
-        status: 'completed',
-        isLatestVersion: true,
+        os: os.toLowerCase(),
+        isLatest: true,
       },
-      order: {
-        createdAt: 'DESC',
-      },
+      order: { createdAt: 'DESC' },
     });
   }
 
-  async setLatestVersion(buildId: string, version: string, releaseNotes?: string): Promise<BuildStatus | null> {
-    // First, unmark all previous versions for this OS
-    const build = await this.buildStatusRepository.findOne({ where: { buildId } });
-    if (!build) {
-      this.logger.error(`Build ${buildId} not found`);
-      return null;
-    }
+  async publishRelease(input: PublishReleaseInput): Promise<BuildStatus> {
+    const normalisedOs = input.os.toLowerCase();
 
-    // Unmark previous latest versions for this OS
     await this.buildStatusRepository.update(
-      { os: build.os, isLatestVersion: true },
-      { isLatestVersion: false }
+      { os: normalisedOs, isLatest: true },
+      { isLatest: false },
     );
 
-    // Mark this build as latest version
-    build.isLatestVersion = true;
-    build.version = version;
-    if (releaseNotes) {
-      build.releaseNotes = releaseNotes;
-    }
+    const release = this.buildStatusRepository.create({
+      os: normalisedOs,
+      version: input.version,
+      downloadUrl: input.downloadUrl,
+      releaseNotes: input.releaseNotes,
+      isMandatory: input.isMandatory ?? false,
+      isLatest: true,
+      metadata: input.metadata,
+    });
 
-    await this.buildStatusRepository.save(build);
-    this.logger.log(`Build ${buildId} marked as latest version ${version} for ${build.os}`);
-    
-    return build;
+    const saved = await this.buildStatusRepository.save(release);
+    this.logger.log(
+      `Published ${normalisedOs} release ${saved.version} (mandatory=${saved.isMandatory})`,
+    );
+    return saved;
   }
 
-  async getAllLatestVersions(): Promise<BuildStatus[]> {
-    return await this.buildStatusRepository.find({
-      where: {
-        status: 'completed',
-        isLatestVersion: true,
-      },
-      order: {
-        createdAt: 'DESC',
-      },
+  async listReleases(os?: string): Promise<BuildStatus[]> {
+    const where = os ? { os: os.toLowerCase() } : {};
+    return this.buildStatusRepository.find({
+      where,
+      order: { createdAt: 'DESC' },
     });
   }
-}
 
+  async markReleaseAsLatest(id: string): Promise<BuildStatus> {
+    const release = await this.buildStatusRepository.findOne({ where: { id } });
+    if (!release) {
+      throw new NotFoundException(`Release ${id} not found`);
+    }
+
+    await this.buildStatusRepository.update(
+      { os: release.os, isLatest: true },
+      { isLatest: false },
+    );
+
+    release.isLatest = true;
+    await this.buildStatusRepository.save(release);
+
+    this.logger.log(`Release ${release.id} promoted to latest for ${release.os}`);
+    return release;
+  }
+
+  async deleteRelease(id: string): Promise<void> {
+    await this.buildStatusRepository.delete(id);
+  }
+}

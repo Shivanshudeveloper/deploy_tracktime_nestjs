@@ -21,14 +21,18 @@ export class UpdateService {
       return null;
     }
 
-    // Construct the download URL
-    const downloadUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/api/update/download/${os}`;
+    // Use stored download URL if provided, otherwise fall back to API endpoint
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const downloadUrl =
+      latestBuild.downloadUrl && latestBuild.downloadUrl.startsWith('http')
+        ? latestBuild.downloadUrl
+        : `${baseUrl}/api/update/download/${os}`;
 
     return {
       currentVersion: latestBuild.version || '0.1.0',
       downloadUrl,
       releaseNotes: latestBuild.releaseNotes || 'No release notes available',
-      isMandatory: false, // Can be enhanced later based on version difference
+      isMandatory: latestBuild.isMandatory ?? false,
       publishedAt: latestBuild.updatedAt,
     };
   }
@@ -44,10 +48,33 @@ export class UpdateService {
     }
 
     // Determine the installer path based on OS
+    const resolvedOs = os.toLowerCase();
+
+    // Prefer explicit artifact path if provided (non-http)
+    if (latestBuild.downloadUrl && !latestBuild.downloadUrl.startsWith('http')) {
+      const normalized = latestBuild.downloadUrl
+        .replace(/\\/g, '/')
+        .replace(/^\.?\/*/, '');
+
+      const absolutePath = path.isAbsolute(normalized)
+        ? normalized
+        : path.resolve(__dirname, '..', '..', normalized);
+
+      if (fs.existsSync(absolutePath)) {
+        return {
+          filePath: absolutePath,
+          fileName: path.basename(absolutePath),
+        };
+      }
+      this.logger.warn(
+        `Configured artifact path not found (${latestBuild.downloadUrl}). Falling back to default location.`,
+      );
+    }
+
     let installerPath: string;
     let fileName: string;
 
-    switch (os.toLowerCase()) {
+    switch (resolvedOs) {
       case 'windows':
         installerPath = path.join(
           __dirname,
@@ -57,7 +84,7 @@ export class UpdateService {
           'organisation',
           'Installer',
           'windows',
-          'tracktimeInstaller.exe'
+          'tracktimeInstaller.exe',
         );
         fileName = 'tracktimeInstaller.exe';
         break;
@@ -70,7 +97,7 @@ export class UpdateService {
           'organisation',
           'Installer',
           'linux',
-          'productivity-desktop_0.1.0-1_amd64.deb'
+          'productivity-desktop_0.1.0-1_amd64.deb',
         );
         fileName = 'productivity-desktop_0.1.0-1_amd64.deb';
         break;
@@ -84,7 +111,7 @@ export class UpdateService {
           'Installer',
           'macos',
           'Installer',
-          'TrackTime-1.0.0.dmg'
+          'TrackTime-1.0.0.dmg',
         );
         fileName = 'TrackTime-1.0.0.dmg';
         break;
@@ -92,7 +119,6 @@ export class UpdateService {
         throw new NotFoundException(`Unsupported OS: ${os}`);
     }
 
-    // Check if file exists
     if (!fs.existsSync(installerPath)) {
       this.logger.error(`Installer file not found at: ${installerPath}`);
       throw new NotFoundException(`Installer file not found for OS: ${os}`);

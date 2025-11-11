@@ -1,62 +1,46 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+} from 'typeorm';
 
+/**
+ * Stores published desktop application builds/releases.
+ * Kept intentionally lean – additional metadata can live inside the JSON column.
+ */
 @Entity('build_status')
+@Index(['os', 'version'], { unique: true })
 export class BuildStatus {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
-  buildId: string; // Unique identifier for each build request
+  @Column({ name: 'os', length: 32 })
+  os: string; // e.g. windows, macos, linux
 
-  @Column()
-  userId: string;
+  @Column({ name: 'version', length: 64 })
+  version: string; // semantic version (1.0.0, 1.0.1, etc.)
 
-  @Column()
-  organizationId: string;
+  @Column({ name: 'download_url', type: 'text', nullable: true })
+  downloadUrl?: string; // optional direct download URL
 
-  @Column()
-  os: string; // windows, linux, macos
+  @Column({ name: 'release_notes', type: 'text', nullable: true })
+  releaseNotes?: string;
 
-  @Column()
-  userType: string; // existing, new, anonymous
+  @Column({ name: 'is_latest', default: true })
+  isLatest: boolean;
 
-  @Column()
-  status: string; // pending, building, completed, failed
+  @Column({ name: 'is_mandatory', default: false })
+  isMandatory: boolean;
 
-  @Column({ nullable: true })
-  githubWorkflowId: string;
+  @Column({ name: 'metadata', type: 'json', nullable: true })
+  metadata?: Record<string, any>; // legacy build-info / future fields
 
-  @Column({ nullable: true })
-  githubRunId: string;
-
-  @Column({ nullable: true })
-  downloadUrl: string;
-
-  @Column({ nullable: true })
-  errorMessage: string;
-
-  @Column({ type: 'json', nullable: true })
-  progressSteps: any; // Store build progress steps
-
-  @Column({ default: 0 })
-  progressPercentage: number;
-
-  @Column({ nullable: true })
-  currentStep: string;
-
-  @Column({ nullable: true })
-  version: string; // Semantic version (e.g., 0.1.0)
-
-  @Column({ default: false })
-  isLatestVersion: boolean; // Flag to mark as latest production version
-
-  @Column({ type: 'text', nullable: true })
-  releaseNotes: string; // Release notes for this version
-
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }
-
