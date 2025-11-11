@@ -44,6 +44,15 @@ export class BuildStatus {
   @Column({ nullable: true })
   currentStep: string;
 
+  @Column({ nullable: true })
+  version: string; // Semantic version (e.g., 0.1.0)
+
+  @Column({ default: false })
+  isLatestVersion: boolean; // Flag to mark as latest production version
+
+  @Column({ type: 'text', nullable: true })
+  releaseNotes: string; // Release notes for this version
+
   @CreateDateColumn()
   createdAt: Date;
 

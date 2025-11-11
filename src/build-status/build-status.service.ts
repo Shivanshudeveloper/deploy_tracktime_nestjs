@@ -154,5 +154,58 @@ export class BuildStatusService {
   private generateBuildId(): string {
     return `build_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
+
+  // Version management methods
+  async getLatestVersion(os: string): Promise<BuildStatus | null> {
+    return await this.buildStatusRepository.findOne({
+      where: {
+        os,
+        status: 'completed',
+        isLatestVersion: true,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+  }
+
+  async setLatestVersion(buildId: string, version: string, releaseNotes?: string): Promise<BuildStatus | null> {
+    // First, unmark all previous versions for this OS
+    const build = await this.buildStatusRepository.findOne({ where: { buildId } });
+    if (!build) {
+      this.logger.error(`Build ${buildId} not found`);
+      return null;
+    }
+
+    // Unmark previous latest versions for this OS
+    await this.buildStatusRepository.update(
+      { os: build.os, isLatestVersion: true },
+      { isLatestVersion: false }
+    );
+
+    // Mark this build as latest version
+    build.isLatestVersion = true;
+    build.version = version;
+    if (releaseNotes) {
+      build.releaseNotes = releaseNotes;
+    }
+
+    await this.buildStatusRepository.save(build);
+    this.logger.log(`Build ${buildId} marked as latest version ${version} for ${build.os}`);
+    
+    return build;
+  }
+
+  async getAllLatestVersions(): Promise<BuildStatus[]> {
+    return await this.buildStatusRepository.find({
+      where: {
+        status: 'completed',
+        isLatestVersion: true,
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+    });
+  }
 }
 

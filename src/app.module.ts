@@ -49,6 +49,7 @@ import { PolicyUsers } from './organisation/policy_user.entity';
 import { InstallerService } from './installer/installer.service';
 import { BuildStatusModule } from './build-status/build-status.module';
 import { NotificationModule } from './notifications/notification.module';
+import { UpdateModule } from './update/update.module';
 
 
 @Module({
@@ -88,6 +89,7 @@ import { NotificationModule } from './notifications/notification.module';
     }),
     BuildStatusModule,
     NotificationModule,
+    UpdateModule,
   ],
   controllers: [
     UserController,
