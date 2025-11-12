@@ -22,7 +22,7 @@ export class UpdateService {
     }
 
     // Use stored download URL if provided, otherwise fall back to API endpoint
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.BASE_URL || 'http://localhost:8000';
     const downloadUrl =
       latestBuild.downloadUrl && latestBuild.downloadUrl.startsWith('http')
         ? latestBuild.downloadUrl
