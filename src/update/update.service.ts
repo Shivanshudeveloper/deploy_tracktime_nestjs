@@ -27,7 +27,7 @@ export class UpdateService {
       latestBuild.downloadUrl && latestBuild.downloadUrl.startsWith('http')
         ? latestBuild.downloadUrl
         : `${baseUrl}/api/update/download/${os}`;
-
+ 
     return {
       currentVersion: latestBuild.version || '0.1.0',
       downloadUrl,
