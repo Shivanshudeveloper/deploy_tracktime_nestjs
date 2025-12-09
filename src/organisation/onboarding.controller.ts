@@ -72,15 +72,16 @@ export class OnboardingController {
     GMT: 'Europe/London',
   };
 
+  private readonly configValues = {
+        HOST_FOR_NEST:
+          'https://deploy-tracktime-nestjs-cs78.onrender.com/onboarding/users/configStatus',
+        HOST_FOR_GO: 'https://go-producer-deploy-tyuf.onrender.com/produce',
+      };
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly userService: AuthService,
-    private readonly jwtService: JwtService,
     private readonly organizationAdminService: organizationAdminService,
     private readonly wasabiUploadService: WasabiUploadService,
-    private readonly installerService: InstallerService,
-    private readonly buildStatusService: BuildStatusService,
-    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -143,6 +144,7 @@ export class OnboardingController {
     }));
   }
 
+  
   @Post('organization/register')
   async createOrganization(
     @Body() createOrganizationDto: CreateOrganizationDTO,
@@ -2484,8 +2486,8 @@ export class OnboardingController {
       // Prepare configuration values (matching Rust app format - 7 fields only)
       const configValues = {
         HOST_FOR_NEST:
-          'https://deploy-tracktime-nestjs-lt4b.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-mcjz.onrender.com/produce',
+          this.configValues.HOST_FOR_NEST,
+        HOST_FOR_GO: this.configValues.HOST_FOR_GO,
         device_id: deviceId,
         timeForUnpaidUser: userConfig?.timeForUnpaidUser || '2', // Default 2 seconds for paid users, can be updated by policy
         organizationId: organizationId,
@@ -2979,8 +2981,8 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
 
       const configValues = {
         HOST_FOR_NEST:
-          'https://deploy-tracktime-nestjs-lt4b.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-mcjz.onrender.com/produce',
+          this.configValues.HOST_FOR_NEST,
+        HOST_FOR_GO: this.configValues.HOST_FOR_GO,
         device_id: deviceId,
         timeForUnpaidUser: '2', // Default 2 seconds, can be updated by policy
         organizationId: orgId,
