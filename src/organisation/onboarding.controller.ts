@@ -62,7 +62,7 @@ import { NotificationService } from '../notifications/notification.service';
 @Controller('onboarding')
 export class OnboardingController {
   private readonly logger = new Logger(OnboardingController.name);
-  
+
   // Timezone mapping for proper conversion
   private readonly timezoneMapping = {
     PST: 'America/Los_Angeles',
@@ -73,10 +73,10 @@ export class OnboardingController {
   };
 
   private readonly configValues = {
-        HOST_FOR_NEST:
-          'https://deploy-tracktime-nestjs-cs78.onrender.com/onboarding/users/configStatus',
-        HOST_FOR_GO: 'https://go-producer-deploy-tyuf.onrender.com/produce',
-      };
+    HOST_FOR_NEST:
+      'https://tracktime-nestjs.onrender.com/onboarding/users/configStatus',
+    HOST_FOR_GO: 'https://tracktime-go-producer.onrender.com/produce',
+  };
   constructor(
     private readonly onboardingService: OnboardingService,
     private readonly userService: AuthService,
@@ -95,13 +95,13 @@ export class OnboardingController {
     organizationTimezone: string,
   ): string {
     if (!timestamp) return '';
-    
+
     try {
       const date = new Date(timestamp);
-      
+
       // Get the IANA timezone identifier
       const ianaTimezone = this.timezoneMapping[organizationTimezone] || 'UTC';
-      
+
       // Format options for readable date-time (WITHOUT timezone name for cleaner display)
       const options: Intl.DateTimeFormatOptions = {
         year: 'numeric',
@@ -113,7 +113,7 @@ export class OnboardingController {
         timeZone: ianaTimezone,
         hour12: true, // Ensure 12-hour format with AM/PM
       };
-      
+
       return date.toLocaleString('en-US', options);
     } catch (error) {
       this.logger.error(`Error formatting timestamp: ${error.message}`);
@@ -144,7 +144,6 @@ export class OnboardingController {
     }));
   }
 
-  
   @Post('organization/register')
   async createOrganization(
     @Body() createOrganizationDto: CreateOrganizationDTO,
@@ -727,13 +726,14 @@ export class OnboardingController {
       }
 
       // Fetch all necessary data in parallel for better performance
-      const [images, userData, devices, users, organization] = await Promise.all([
-        this.onboardingService.fetchScreenShot(),
-        this.onboardingService.getAllUserActivityData(OrganizationId),
-        this.onboardingService.findAllDevices(OrganizationId),
-        this.onboardingService.getAllusers(OrganizationId), // Get users for user_name mapping
-        this.onboardingService.getOrganizationDetails(OrganizationId), // Get organization details for timezone
-      ]);
+      const [images, userData, devices, users, organization] =
+        await Promise.all([
+          this.onboardingService.fetchScreenShot(),
+          this.onboardingService.getAllUserActivityData(OrganizationId),
+          this.onboardingService.findAllDevices(OrganizationId),
+          this.onboardingService.getAllusers(OrganizationId), // Get users for user_name mapping
+          this.onboardingService.getOrganizationDetails(OrganizationId), // Get organization details for timezone
+        ]);
 
       const organizationTimezone = organization?.timeZone || 'UTC';
 
@@ -758,7 +758,9 @@ export class OnboardingController {
       const finalData = userData
         .map((activity) => {
           const device = deviceMap.get(activity.user_uid);
-          const user = activity.user_uid ? userMap.get(activity.user_uid) : null;
+          const user = activity.user_uid
+            ? userMap.get(activity.user_uid)
+            : null;
           const image = imageMap.get(activity.activity_uuid);
 
           // Only include activities that have screenshots
@@ -798,7 +800,7 @@ export class OnboardingController {
       this.logger.log(
         `Returning ${finalData.length} screenshots for organization ${OrganizationId} (Timezone: ${organizationTimezone})`,
       );
-      
+
       res.status(200).json(finalData);
     } catch (error) {
       this.logger.error('Error fetching screenshots:', error);
@@ -836,9 +838,8 @@ export class OnboardingController {
       }
 
       // Get organization timezone
-      const organization = await this.onboardingService.getOrganizationDetails(
-        OrganizationId,
-      );
+      const organization =
+        await this.onboardingService.getOrganizationDetails(OrganizationId);
       const organizationTimezone = organization?.timeZone || 'UTC';
 
       let fromDate: Date;
@@ -1394,9 +1395,8 @@ export class OnboardingController {
       }
 
       // Fetch organization details to get timezone
-      const organization = await this.onboardingService.getOrganizationDetails(
-        OrganizationId,
-      );
+      const organization =
+        await this.onboardingService.getOrganizationDetails(OrganizationId);
       const organizationTimezone = organization?.timeZone || 'UTC';
 
       const user = await this.onboardingService.getUserActivityDetails(
@@ -1509,9 +1509,8 @@ export class OnboardingController {
       }
 
       // Get organization timezone
-      const organization = await this.onboardingService.getOrganizationDetails(
-        OrganizationId,
-      );
+      const organization =
+        await this.onboardingService.getOrganizationDetails(OrganizationId);
       const organizationTimezone = organization?.timeZone || 'UTC';
 
       // Get timesheet data for the specified date
@@ -1925,9 +1924,8 @@ export class OnboardingController {
       }
 
       // Get organization timezone
-      const organization = await this.onboardingService.getOrganizationDetails(
-        OrganizationId,
-      );
+      const organization =
+        await this.onboardingService.getOrganizationDetails(OrganizationId);
       const organizationTimezone = organization?.timeZone || 'UTC';
 
       // step2: gather the data of the userActivity of the organization later on we all separe them with user.
@@ -2477,16 +2475,15 @@ export class OnboardingController {
       const iv = Buffer.alloc(16, 0);
 
       // Create organization object for handlers with clean name for zip file
-      const organization = { 
-        _id: organizationId, 
+      const organization = {
+        _id: organizationId,
         name: 'TrackTime', // Use generic name for invite downloads
-        toString: () => organizationId 
+        toString: () => organizationId,
       };
 
       // Prepare configuration values (matching Rust app format - 7 fields only)
       const configValues = {
-        HOST_FOR_NEST:
-          this.configValues.HOST_FOR_NEST,
+        HOST_FOR_NEST: this.configValues.HOST_FOR_NEST,
         HOST_FOR_GO: this.configValues.HOST_FOR_GO,
         device_id: deviceId,
         timeForUnpaidUser: userConfig?.timeForUnpaidUser || '2', // Default 2 seconds for paid users, can be updated by policy
@@ -2519,7 +2516,9 @@ organizationId=${encryptedConfig.organizationId}
 device_id=${encryptedConfig.device_id}
 HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
 
-      this.logger.log(`Generating installer package for ${operatingSystem} - Org: ${organizationId}`);
+      this.logger.log(
+        `Generating installer package for ${operatingSystem} - Org: ${organizationId}`,
+      );
 
       // Use appropriate handler based on OS
       if (operatingSystem === 'windows') {
@@ -2713,9 +2712,8 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
       }
 
       // Get organization timezone
-      const organization = await this.onboardingService.getOrganizationDetails(
-        OrganizationId,
-      );
+      const organization =
+        await this.onboardingService.getOrganizationDetails(OrganizationId);
       const organizationTimezone = organization?.timeZone || 'UTC';
 
       const date = req.query.date as string;
@@ -2980,8 +2978,7 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
       }
 
       const configValues = {
-        HOST_FOR_NEST:
-          this.configValues.HOST_FOR_NEST,
+        HOST_FOR_NEST: this.configValues.HOST_FOR_NEST,
         HOST_FOR_GO: this.configValues.HOST_FOR_GO,
         device_id: deviceId,
         timeForUnpaidUser: '2', // Default 2 seconds, can be updated by policy
@@ -3176,9 +3173,13 @@ HOST_FOR_NEST=${encryptedConfig.HOST_FOR_NEST}`;
       );
 
       // Check for installer files
-      const dmgPath = path.join(osInstallerPath, 'Installer', 'TrackTime-1.0.0.dmg');
+      const dmgPath = path.join(
+        osInstallerPath,
+        'Installer',
+        'TrackTime-1.0.0.dmg',
+      );
       const trackTimePath = path.join(osInstallerPath, 'trackTime');
-      
+
       let installerPath: string;
       let installerFileName: string;
 
@@ -3218,7 +3219,9 @@ Note: The dev_config.txt contains your organization configuration and will be us
 
       zip.addFile('README.txt', Buffer.from(readmeContent, 'utf8'));
       zip.writeZip(customizedInstallerPath);
-      this.logger.log(`macOS installer package created: ${customizedInstallerName}`);
+      this.logger.log(
+        `macOS installer package created: ${customizedInstallerName}`,
+      );
 
       // Send file
       res.set({
@@ -3227,16 +3230,18 @@ Note: The dev_config.txt contains your organization configuration and will be us
         'Content-Length': fs.statSync(customizedInstallerPath).size.toString(),
       });
 
-      res.status(HttpStatus.OK).sendFile(customizedInstallerPath, {}, async (err) => {
-        try {
-          if (fs.existsSync(customizedInstallerPath)) {
-            fs.unlinkSync(customizedInstallerPath);
-            this.logger.log('Temporary installer cleaned up successfully.');
+      res
+        .status(HttpStatus.OK)
+        .sendFile(customizedInstallerPath, {}, async (err) => {
+          try {
+            if (fs.existsSync(customizedInstallerPath)) {
+              fs.unlinkSync(customizedInstallerPath);
+              this.logger.log('Temporary installer cleaned up successfully.');
+            }
+          } catch (cleanupError) {
+            this.logger.error('Cleanup error:', cleanupError);
           }
-        } catch (cleanupError) {
-          this.logger.error('Cleanup error:', cleanupError);
-        }
-      });
+        });
     } catch (error) {
       this.logger.error('Error creating macOS installer:', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
@@ -3282,7 +3287,11 @@ Note: The dev_config.txt contains your organization configuration and will be us
 
       // Create ZIP package
       const zip = new AdmZip();
-      zip.addLocalFile(installerPath, '', 'productivity-desktop_0.1.0-1_amd64.deb');
+      zip.addLocalFile(
+        installerPath,
+        '',
+        'productivity-desktop_0.1.0-1_amd64.deb',
+      );
       zip.addFile('dev_config.txt', Buffer.from(updatedConfig, 'utf8'));
 
       const readmeContent = `TrackTime Installer - Linux
@@ -3297,7 +3306,9 @@ Note: The dev_config.txt contains your organization configuration and will be us
 
       zip.addFile('README.txt', Buffer.from(readmeContent, 'utf8'));
       zip.writeZip(customizedInstallerPath);
-      this.logger.log(`Linux installer package created: ${customizedInstallerName}`);
+      this.logger.log(
+        `Linux installer package created: ${customizedInstallerName}`,
+      );
 
       // Send file
       res.set({
@@ -3306,16 +3317,18 @@ Note: The dev_config.txt contains your organization configuration and will be us
         'Content-Length': fs.statSync(customizedInstallerPath).size.toString(),
       });
 
-      res.status(HttpStatus.OK).sendFile(customizedInstallerPath, {}, async (err) => {
-        try {
-          if (fs.existsSync(customizedInstallerPath)) {
-            fs.unlinkSync(customizedInstallerPath);
-            this.logger.log('Temporary installer cleaned up successfully.');
+      res
+        .status(HttpStatus.OK)
+        .sendFile(customizedInstallerPath, {}, async (err) => {
+          try {
+            if (fs.existsSync(customizedInstallerPath)) {
+              fs.unlinkSync(customizedInstallerPath);
+              this.logger.log('Temporary installer cleaned up successfully.');
+            }
+          } catch (cleanupError) {
+            this.logger.error('Cleanup error:', cleanupError);
           }
-        } catch (cleanupError) {
-          this.logger.error('Cleanup error:', cleanupError);
-        }
-      });
+        });
     } catch (error) {
       this.logger.error('Error creating Linux installer:', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
@@ -3600,22 +3613,25 @@ Note: The dev_config.txt contains your organization configuration and will be us
       }
       const organization =
         await this.onboardingService.getOrganizationDetails(OrganizationId);
-      
+
       // Generate signed URL for logo if it exists
       let organizationResponse: any = organization;
       if (organization && organization.logo) {
         try {
-          const signedUrl = await this.wasabiUploadService.getOrganizationLogoSignedUrl(
-            organization.logo,
-            86400 // 24 hours expiration
-          );
+          const signedUrl =
+            await this.wasabiUploadService.getOrganizationLogoSignedUrl(
+              organization.logo,
+              86400, // 24 hours expiration
+            );
           organizationResponse = { ...organization, logoUrl: signedUrl }; // Add signed URL to response
         } catch (error) {
-          this.logger.warn(`⚠️ Failed to generate signed URL for organization logo: ${error.message}`);
+          this.logger.warn(
+            `⚠️ Failed to generate signed URL for organization logo: ${error.message}`,
+          );
           // Continue without signed URL - frontend can use fallback
         }
       }
-      
+
       return res.status(200).json(organizationResponse);
     } catch (error) {
       return res.status(500).json({
